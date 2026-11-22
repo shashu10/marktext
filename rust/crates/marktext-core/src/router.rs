@@ -34,7 +34,9 @@ impl PaneRouter {
             HostToGuest::Preferences { .. }
             | HostToGuest::PreferencePatch { .. }
             | HostToGuest::PreferenceResult { .. }
-            | HostToGuest::HostActionResult { .. } => None,
+            | HostToGuest::HostActionResult { .. }
+            | HostToGuest::SpellcheckerInfo { .. }
+            | HostToGuest::SpellcheckerRemoveResult { .. } => None,
         }
     }
 }

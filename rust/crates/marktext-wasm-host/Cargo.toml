@@ -11,6 +11,8 @@ description = "Single-canvas GPUI host and postMessage bridge for an Electron if
 marktext-core = { path = "../marktext-core" }
 marktext-ui-kit = { path = "../marktext-ui-kit" }
 mt-pref-general = { path = "../mt-pref-general" }
+mt-pref-editor = { path = "../mt-pref-editor" }
+mt-pref-markdown = { path = "../mt-pref-markdown" }
 mt-pref-images = { path = "../mt-pref-images" }
 gpui.workspace = true
 gpui_platform.workspace = true

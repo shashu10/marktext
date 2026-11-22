@@ -1,21 +1,24 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
 //! this view answers with `GuestToHost`. Preference panes mount here as their
-//! crates land; unmigrated panes still use the placeholder.
+//! crates land; unknown panes still use the placeholder.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
+use mt_pref_editor::EditorPane;
 use mt_pref_general::GeneralPane;
 use mt_pref_images::ImagesPane;
+use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    editor: gpui::Entity<EditorPane>,
+    markdown: gpui::Entity<MarkdownPane>,
     images: gpui::Entity<ImagesPane>,
 }
 
@@ -25,7 +28,21 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
-                Arc::clone(&bridge),
+                bridge.clone(),
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+            )
+        });
+        let editor = cx.new(|_cx| {
+            EditorPane::new(
+                bridge.clone(),
+                Rc::new(publish_preference),
+                Rc::new(publish_word_removal),
+            )
+        });
+        let markdown = cx.new(|_cx| {
+            MarkdownPane::new(
+                bridge.clone(),
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
@@ -41,6 +58,8 @@ impl HostView {
         Self {
             session,
             general,
+            editor,
+            markdown,
             images,
         }
     }
@@ -55,6 +74,9 @@ impl HostView {
                 let persisted = status == "persisted";
                 let request_id = *id;
                 self.general.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+                self.markdown.update(cx, |pane, cx| {
                     pane.accept_persist_result(request_id, persisted, cx);
                 });
                 self.images.update(cx, |pane, cx| {
@@ -75,10 +97,33 @@ impl HostView {
             HostToGuest::PreferencePatch { changes } => {
                 self.sync_images_user_data(changes, cx);
             }
+            HostToGuest::SpellcheckerInfo {
+                is_osx,
+                dictionaries,
+                words,
+            } => {
+                let is_osx = *is_osx;
+                let dictionaries = dictionaries.clone();
+                let words = words.clone();
+                self.editor.update(cx, |pane, cx| {
+                    pane.apply_spellchecker_info(is_osx, dictionaries, words, cx);
+                });
+                return None;
+            }
+            HostToGuest::SpellcheckerRemoveResult { id, ok } => {
+                let request_id = *id;
+                let ok = *ok;
+                self.editor.update(cx, |pane, cx| {
+                    pane.accept_word_removal(request_id, ok, cx);
+                });
+                return None;
+            }
             _ => {}
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.editor.update(cx, |_pane, cx| cx.notify());
+        self.markdown.update(cx, |_pane, cx| cx.notify());
         self.images.update(cx, |_pane, cx| cx.notify());
         reply
     }
@@ -99,6 +144,8 @@ impl Render for HostView {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
         let content: AnyElement = match self.session.active_pane() {
             "general" => self.general.clone().into_any_element(),
+            "editor" => self.editor.clone().into_any_element(),
+            "markdown" => self.markdown.clone().into_any_element(),
             "images" => self.images.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
@@ -164,6 +211,15 @@ pub fn publish_host_action(id: u64, action: String, payload: Value) {
     }
 }
 
+pub fn publish_word_removal(id: u64, word: String) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::SpellcheckerRemoveWord { id, word });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = (id, word);
+    }
+}
+
 #[cfg(target_family = "wasm")]
 pub fn post_to_parent(reply: &GuestToHost) {
     let Some(window) = web_sys::window() else {
@@ -177,4 +233,3 @@ pub fn post_to_parent(reply: &GuestToHost) {
     };
     let _ = parent.post_message(&value, "*");
 }
-

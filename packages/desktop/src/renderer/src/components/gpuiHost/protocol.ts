@@ -9,6 +9,7 @@ export type GuestMessage =
   | { type: 'HOST_ACTION'; id: number; action: string; payload: unknown }
   | { type: 'SCROLL_TO_HEADER'; slug: string }
   | { type: 'TOGGLE_READING_MODE'; readOnly: boolean }
+  | { type: 'SPELLCHECKER_REMOVE_WORD'; id: number; word: string }
 
 export type HostCommand =
   | { type: 'set-preference'; key: string; value: unknown }
@@ -16,6 +17,7 @@ export type HostCommand =
   | { type: 'host-action'; id: number; action: string; payload: unknown }
   | { type: 'scroll-to-header'; slug: string }
   | { type: 'toggle-reading-mode'; readOnly: boolean }
+  | { type: 'spellchecker-remove-word'; id: number; word: string }
 
 export type PanePresentation = 'legacy' | 'wasm' | 'native'
 
@@ -78,6 +80,13 @@ export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   if (message.type === 'TOGGLE_READING_MODE' && typeof message.readOnly === 'boolean') {
     return { type: 'toggle-reading-mode', readOnly: message.readOnly }
   }
+  if (
+    message.type === 'SPELLCHECKER_REMOVE_WORD' &&
+    typeof message.id === 'number' &&
+    typeof message.word === 'string'
+  ) {
+    return { type: 'spellchecker-remove-word', id: message.id, word: message.word }
+  }
   return null
 }
 
@@ -90,5 +99,6 @@ export const isGuestMessage = (message: unknown): message is GuestMessage =>
     message.type === 'PERSIST_PREFERENCE' ||
     message.type === 'HOST_ACTION' ||
     message.type === 'SCROLL_TO_HEADER' ||
-    message.type === 'TOGGLE_READING_MODE'
+    message.type === 'TOGGLE_READING_MODE' ||
+    message.type === 'SPELLCHECKER_REMOVE_WORD'
   )

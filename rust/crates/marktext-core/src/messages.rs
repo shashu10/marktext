@@ -25,6 +25,17 @@ pub enum HostToGuest {
         status: String,
         payload: Value,
     },
+    /// Spellchecker dictionaries and personal words for the Editor pane.
+    #[serde(rename = "SPELLCHECKER_INFO")]
+    SpellcheckerInfo {
+        #[serde(rename = "isOsx")]
+        is_osx: bool,
+        dictionaries: Vec<String>,
+        words: Vec<String>,
+    },
+    /// Answer to `SPELLCHECKER_REMOVE_WORD`.
+    #[serde(rename = "SPELLCHECKER_REMOVE_RESULT")]
+    SpellcheckerRemoveResult { id: u64, ok: bool },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -58,6 +69,9 @@ pub enum GuestToHost {
         action: String,
         payload: Value,
     },
+    /// Ask Electron to remove a personal dictionary word.
+    #[serde(rename = "SPELLCHECKER_REMOVE_WORD")]
+    SpellcheckerRemoveWord { id: u64, word: String },
 }
 
 #[cfg(test)]
