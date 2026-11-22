@@ -20,10 +20,18 @@ pub enum HostToGuest {
     PreferenceResult { id: u64, status: String },
     /// Answer to `CHOOSE_DIRECTORY`. `path` is null when the dialog was cancelled.
     #[serde(rename = "DIRECTORY_CHOSEN")]
-    DirectoryChosen {
-        id: u64,
-        path: Option<String>,
+    DirectoryChosen { id: u64, path: Option<String> },
+    /// Spellchecker dictionaries and personal words for the Editor pane.
+    #[serde(rename = "SPELLCHECKER_INFO")]
+    SpellcheckerInfo {
+        #[serde(rename = "isOsx")]
+        is_osx: bool,
+        dictionaries: Vec<String>,
+        words: Vec<String>,
     },
+    /// Answer to `SPELLCHECKER_REMOVE_WORD`.
+    #[serde(rename = "SPELLCHECKER_REMOVE_RESULT")]
+    SpellcheckerRemoveResult { id: u64, ok: bool },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -51,6 +59,9 @@ pub enum GuestToHost {
         #[serde(rename = "readOnly")]
         read_only: bool,
     },
+    /// Ask Electron to remove a personal dictionary word.
+    #[serde(rename = "SPELLCHECKER_REMOVE_WORD")]
+    SpellcheckerRemoveWord { id: u64, word: String },
 }
 
 #[cfg(test)]

@@ -3287,6 +3287,7 @@ dependencies = [
  "js-sys",
  "marktext-core",
  "marktext-ui-kit",
+ "mt-pref-editor",
  "mt-pref-files",
  "mt-pref-general",
  "mt-pref-markdown",
@@ -3391,6 +3392,17 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
+]
+
+[[package]]
+name = "mt-pref-editor"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "marktext-core",
+ "marktext-ui-kit",
+ "serde_json",
 ]
 
 [[package]]
