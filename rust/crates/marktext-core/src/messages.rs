@@ -18,6 +18,13 @@ pub enum HostToGuest {
     /// Answer to `PERSIST_PREFERENCE`. `status` is `persisted` or `failed`.
     #[serde(rename = "PREFERENCE_RESULT")]
     PreferenceResult { id: u64, status: String },
+    /// Answer to `HOST_ACTION` (probes, folder picker, open path/url, user-data).
+    #[serde(rename = "HOST_ACTION_RESULT")]
+    HostActionResult {
+        id: u64,
+        status: String,
+        payload: Value,
+    },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -41,6 +48,15 @@ pub enum GuestToHost {
     ToggleReadingMode {
         #[serde(rename = "readOnly")]
         read_only: bool,
+    },
+    /// Ask Electron for a side effect that is not a preference write.
+    /// `action` is one of: `set-user-data`, `ask-image-folder`, `open-path`,
+    /// `open-external`, `probe-pandoc`, `probe-picgo`, `is-executable`.
+    #[serde(rename = "HOST_ACTION")]
+    HostAction {
+        id: u64,
+        action: String,
+        payload: Value,
     },
 }
 

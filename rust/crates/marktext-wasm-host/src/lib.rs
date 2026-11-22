@@ -1,18 +1,22 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
-//! this view answers with `GuestToHost`. The General pane is mounted here;
-//! other panes still use the placeholder until their crates land.
+//! this view answers with `GuestToHost`. Preference panes mount here as their
+//! crates land; unmigrated panes still use the placeholder.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 use mt_pref_general::GeneralPane;
+use mt_pref_images::ImagesPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    images: gpui::Entity<ImagesPane>,
 }
 
 impl HostView {
@@ -21,12 +25,24 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
-                bridge,
+                Arc::clone(&bridge),
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
         });
-        Self { session, general }
+        let images = cx.new(|_cx| {
+            ImagesPane::new(
+                bridge,
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+                Rc::new(publish_host_action),
+            )
+        });
+        Self {
+            session,
+            general,
+            images,
+        }
     }
 
     pub fn active_pane(&self) -> &str {
@@ -34,27 +50,57 @@ impl HostView {
     }
 
     pub fn apply(&mut self, message: &HostToGuest, cx: &mut Context<Self>) -> Option<GuestToHost> {
-        if let HostToGuest::PreferenceResult { id, status } = message {
-            let persisted = status == "persisted";
-            let request_id = *id;
-            self.general.update(cx, |pane, cx| {
-                pane.accept_persist_result(request_id, persisted, cx);
-            });
-            return None;
+        match message {
+            HostToGuest::PreferenceResult { id, status } => {
+                let persisted = status == "persisted";
+                let request_id = *id;
+                self.general.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+                self.images.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+                return None;
+            }
+            HostToGuest::HostActionResult { id, status, payload } => {
+                let request_id = *id;
+                self.images.update(cx, |pane, cx| {
+                    pane.accept_host_result(request_id, status, payload, cx);
+                });
+                return None;
+            }
+            HostToGuest::Preferences { snapshot } => {
+                self.sync_images_user_data(snapshot, cx);
+            }
+            HostToGuest::PreferencePatch { changes } => {
+                self.sync_images_user_data(changes, cx);
+            }
+            _ => {}
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.images.update(cx, |_pane, cx| cx.notify());
         reply
+    }
+
+    fn sync_images_user_data(
+        &mut self,
+        snapshot: &BTreeMap<String, Value>,
+        cx: &mut Context<Self>,
+    ) {
+        self.images.update(cx, |pane, cx| {
+            pane.sync_user_data(snapshot, cx);
+        });
     }
 }
 
 impl Render for HostView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
-        let content: AnyElement = if self.session.active_pane() == "general" {
-            self.general.clone().into_any_element()
-        } else {
-            placeholder(self).into_any_element()
+        let content: AnyElement = match self.session.active_pane() {
+            "general" => self.general.clone().into_any_element(),
+            "images" => self.images.clone().into_any_element(),
+            _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)
     }
@@ -105,6 +151,19 @@ pub fn publish_preference(key: String, value: Value) {
     }
 }
 
+pub fn publish_host_action(id: u64, action: String, payload: Value) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::HostAction {
+        id,
+        action,
+        payload,
+    });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = (id, action, payload);
+    }
+}
+
 #[cfg(target_family = "wasm")]
 pub fn post_to_parent(reply: &GuestToHost) {
     let Some(window) = web_sys::window() else {
@@ -118,3 +177,4 @@ pub fn post_to_parent(reply: &GuestToHost) {
     };
     let _ = parent.post_message(&value, "*");
 }
+
