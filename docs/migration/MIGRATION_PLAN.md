@@ -10,6 +10,7 @@ This RFC defines the **Strangler-Fig ("Ship of Theseus")** architecture and phas
 2. **Write Every GPUI View Once, Ship Twice:** Use Zed's GPUI abstraction (`gpui-ce` + `gpui_ce_platform`) so every migrated UI component compiles to **both** `gpui_web` (WASM inside Electron during incremental rollout) and native OS GPUI (Metal / Vulkan / DirectX once a full window flips).
 3. **Preferences Window First, Muya Editor Last:** `SettingWindow` is already an independent `BrowserWindow` with zero Muya coupling and a clean JSON-schema IPC contract. `@muyajs/core` is 62,272 LOC (~60% of the app) and is migrated last once the Rust core, bridge, theme/i18n tokens, and QA gates are battle-tested.
 4. **Parallelism by Contract:** Once Phase 0 contracts and shared GPUI primitives exist, independent Cloud Agents can migrate leaf panes in parallel without file collisions.
+5. **Translate First, Redesign Second:** Preserve legacy behavior, control semantics, and visual layout 1:1 during each slice port (validated by Bun and GitHub Copilot's Rust migrations). Never mix language translation with opportunistic architectural redesigns or UX changes; defer idiomatic refactors and deeper optimizations until after behavioral parity passes. Every slice must also state its 100% Rust end-state unambiguously so agents do not leave business logic or I/O stranded in Vue/TS.
 
 ---
 
@@ -41,16 +42,19 @@ Only the thin transport adapter swaps as a window graduates stages:
 2. **Stage 2 (Native GPUI Window alongside Electron):** `NativeIpcBridge` (JSON-RPC over stdio / Unix socket directly to Electron Main's `Preference` service and `preferences.json`).
 3. **Stage 3 (Pure Rust App, Electron Retired):** `DirectCoreBridge` (in-process calls directly to `marktext-core`).
 
-### Non-Negotiable `gpui_web` Engineering Constraints
+### Non-Negotiable `gpui_web` & Native GPUI Engineering Constraints
 
 1. **Single-threaded WASM on stable Rust:** Depend on `gpui-ce` and `gpui_ce_platform` with `default-features = false` (no nightly `build-std`, no `SharedArrayBuffer`, no COOP/COEP headers required).
 2. **Explicit bundled fonts:** `gpui_web` has no OS system-font lookup (`CosmicTextSystem::new_without_system_fonts`); embed a UI font via `include_bytes!` and call `cx.text_system().add_fonts(...)` at startup.
 3. **One window / one canvas per document:** `gpui_web` owns a single `<canvas>` per browser document (`WebWindowError` if a second window opens). Keep **one persistent `<iframe>`** in `<GpuiPaneHost>` and switch active panes via `postMessage({ type: 'SET_PANE', pane })`.
-4. **Cloud Agent Cargo caching:** `.cursor/install.sh` pre-warms `cargo build --target wasm32-unknown-unknown --release` into the Cloud Agent Build snapshot so incremental pane builds run in **~1.6s** instead of ~81s cold.
-5. **3-Layer QA Verification for `<canvas>` UI:**
+4. **Cloud Agent Cargo caching & acyclic crate graph:** `.cursor/install.sh` pre-warms `cargo build --target wasm32-unknown-unknown --release` into the Cloud Agent Build snapshot so incremental pane builds run in **~1.6s** instead of ~81s cold. Keep the workspace dependency graph strictly acyclic (`marktext-core` [UI-agnostic] → `marktext-ui-kit` → leaf `mt-*` crates → host crates) so parallel agents never introduce circular dependencies or degrade inner-loop build speed.
+5. **Browser-equivalent primitives live once in `marktext-ui-kit`:** Leaving HTML/DOM means text inputs (selection, copy/paste, undo, dead keys, CJK/IME), scroll views, dropdowns, and Tab/Shift-Tab keyboard focus traversal are no longer free (Cap's GPUI text input alone required ~2,700 LOC of Rust). Build and verify these once in `marktext-ui-kit`, wire explicit window/pane focus order in every view, and avoid one-line CSS effects (backdrop blur, masks) that would require bespoke shaders unless intentionally designed.
+6. **Native GPUI idle wake-ups & framework patches (Stage 2):** GPUI polls on display vsync by default (up to 120Hz on ProMotion displays); explicitly track 5s idle CPU % at Stage 2 and apply/upstream an idle-stop policy (e.g., pause redraw polling after ~100ms of inactivity, which cut Cap's idle wake-ups from 121/s → 1/s). Pin GPUI versions intentionally and budget for small OS-compatibility patches where needed.
+7. **In-place user data compatibility:** Legacy and GPUI builds must read and write the exact same `preferences.json`, markdown files, and recovery checkpoints with zero user data migration.
+8. **3-Layer QA Verification for `<canvas>` UI (Debug + Release):** Since GPUI paints to `<canvas>` rather than inner DOM nodes, verify migrated panes across **both debug and release builds** (catching `debug_assert!` erasure and release-mode serialization/bounds traps) via:
    - **Rust unit/state tests** (pane logic & schema parity),
    - **Bridge contract tests** (`postMessage` ↔ Electron Main `preferences.json` & multi-window broadcast),
-   - **Playwright visual screenshot diff** (WebGL2 works in headless Chromium under `xvfb-run` in Linux Cloud Agent VMs).
+   - **Playwright visual screenshot diff & keyboard/scroll interaction checks** (WebGL2 works in headless Chromium under `xvfb-run` in Linux Cloud Agent VMs).
 
 ### Feasibility Baseline (Verified on Stable `rustc 1.100.0`, `gpui-ce 0.3.0`)
 
@@ -109,18 +113,26 @@ Wave 4: Flip Entire Main Editor Window & Retire Electron Runtime
   └── Ship standalone pure-Rust GPUI MarkText binary
 ```
 
+### Rollout & Parallelization Guardrails (Waves 1–4)
+
+- **Canary Validation Before Fan-Out:** Prove Phase 0 scaffolding, `HostBridge`, and visual/perf baselines end-to-end on canary slices (`A1` General Pane / `B1` About Dialog) before launching parallel Wave 1A/1B agents.
+- **Shadowing (Waves 1–2) vs. Atomic Leaf-Inward Cutover (Wave 3):** Per-pane feature flags and `shadow` mode work well for isolated UI panes with clean `HostBridge` boundaries (Waves 1–2). For deeply coupled, mutable stateful hubs in Wave 3 (`D1` session/checkpoint orchestration and `D3` Muya mutable state), avoid maintaining long-lived dual copies that drift under concurrent edits — instead port **leaf-inward in atomic waves** (_pure logic → state ownership → orchestration → remove shims → simplify_) and **never schedule simultaneous top-down and bottom-up parallel agents colliding on a shared hub**.
+- **Immutable Wave 3 Conformance Oracle & Fuzzing:** Treat Muya's existing language-independent CommonMark + GFM Vitest conformance suite as an immutable parity oracle (`0` tests skipped or deleted). Once `D3a` lands in Rust, enable coverage-guided parser fuzzing on Markdown/inline parsers.
+- **Wave 4 Electron-Retirement CI Guardrail:** Once Electron is retired in Wave 4, add a release CI assertion that fails the build if `electron`, Chromium, or webview dependencies re-enter the packaged artifact.
+
 ---
 
 ## 4. Enterprise Governance, Review & Measurement
 
 - **Multi-Environment Feature Flags (`dev` / `staging` / `prod`):**
   - `dev`: Migrated slices active (`rust-wasm` / `gpui-native`) for rapid verification.
-  - `staging`: `shadow` mode where applicable (runs legacy + Rust side-by-side, serves legacy, logs diffs & latency).
+  - `staging`: `shadow` mode where applicable for isolated stateless/UI slices (runs legacy + Rust side-by-side, serves legacy, logs diffs & latency).
   - `prod`: Staged canary per slice with instant rollback to `legacy`.
-- **Branch Protection & Separation of Duties:**
+- **Branch Protection, Split-Context Adversarial QA & Oracle Protection:**
   - Cloud Agents and automated workflows never push to `develop` or self-merge.
-  - Migration PRs target `develop` with label `migration` → trigger deterministic CI (`lint`, `typecheck`, unit tests, Rust tests) + independent QA Verifier → require green checks + human `CODEOWNERS` LGTM.
+  - **Protect the Oracle:** Implementing agents must never delete, skip, or weaken existing unit/E2E/conformance tests, stub out failing code to appease the compiler, relax visual-diff thresholds, or apply CI waiver/override labels.
+  - **Split-Context Independent Verification:** Migration PRs target `develop` with label `migration` → trigger deterministic CI (`lint`, `typecheck`, unit tests, Rust debug + release tests, `clippy`, `wasm32` build) + the independent `@cursor/sdk` QA Monitor running in a **fresh context window** (inspecting diffs, metrics, and screenshots without implementer bias) → require green checks + human `CODEOWNERS` LGTM.
 - **Metrics Tracked per Rollout:**
-  - **Delivery:** Cycle time per migrated slice (before vs. after), PRs merged vs. blocked/rejected, failure & retry rates, cost per agent run.
-  - **Runtime:** Startup latency, RSS memory per window, idle CPU %, bundle/binary size, large-document parse/render/scroll p95 latency, visual pixel-diff %.
+  - **Delivery:** Cycle time per migrated slice (before vs. after), PRs merged vs. blocked/rejected, failure & retry rates, cost per agent run (and prompt-cache efficiency).
+  - **Runtime:** Startup latency, RSS memory per window, idle CPU % (including native vsync wake-ups), bundle/binary size, large-document parse/render/scroll p95 latency, visual pixel-diff %.
 - **Execution Runbook:** Every Cloud Agent must follow the Draft-PR-first Before/After measurement and human-review protocol in [`docs/migration/RUNBOOK.md`](./RUNBOOK.md).

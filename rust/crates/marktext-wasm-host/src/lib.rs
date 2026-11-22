@@ -9,12 +9,14 @@ use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 use mt_pref_editor::EditorPane;
 use mt_pref_general::GeneralPane;
+use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
     editor: gpui::Entity<EditorPane>,
+    markdown: gpui::Entity<MarkdownPane>,
 }
 
 impl HostView {
@@ -30,15 +32,23 @@ impl HostView {
         });
         let editor = cx.new(|_cx| {
             EditorPane::new(
-                bridge,
+                bridge.clone(),
                 Rc::new(publish_preference),
                 Rc::new(publish_word_removal),
+            )
+        });
+        let markdown = cx.new(|_cx| {
+            MarkdownPane::new(
+                bridge,
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
             )
         });
         Self {
             session,
             general,
             editor,
+            markdown,
         }
     }
 
@@ -52,6 +62,9 @@ impl HostView {
                 let persisted = status == "persisted";
                 let request_id = *id;
                 self.general.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+                self.markdown.update(cx, |pane, cx| {
                     pane.accept_persist_result(request_id, persisted, cx);
                 });
                 return None;
@@ -82,6 +95,7 @@ impl HostView {
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
         self.editor.update(cx, |_pane, cx| cx.notify());
+        self.markdown.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -92,6 +106,7 @@ impl Render for HostView {
         let content: AnyElement = match self.session.active_pane() {
             "general" => self.general.clone().into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
+            "markdown" => self.markdown.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)
