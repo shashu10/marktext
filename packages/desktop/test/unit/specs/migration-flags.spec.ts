@@ -104,6 +104,10 @@ describe('GpuiPaneHost protocol', () => {
       action: 'probe-pandoc',
       payload: {}
     })
+    expect(frameMessageToCommand({ type: 'CHOOSE_DIRECTORY', id: 7 })).toEqual({
+      type: 'choose-directory',
+      id: 7
+    })
     expect(frameMessageToCommand({ type: 'SCROLL_TO_HEADER', slug: 'intro' })).toEqual({
       type: 'scroll-to-header',
       slug: 'intro'
@@ -111,6 +115,27 @@ describe('GpuiPaneHost protocol', () => {
     expect(frameMessageToCommand({ type: 'TOGGLE_READING_MODE', readOnly: true })).toEqual({
       type: 'toggle-reading-mode',
       readOnly: true
+    })
+    expect(frameMessageToCommand({ type: 'REQUEST_KEYBINDINGS' })).toEqual({
+      type: 'request-keybindings'
+    })
+    expect(frameMessageToCommand({
+      type: 'SAVE_KEYBINDING',
+      id: 2,
+      commandId: 'file.save',
+      accelerator: 'Ctrl+S'
+    })).toEqual({
+      type: 'save-keybinding',
+      id: 2,
+      commandId: 'file.save',
+      accelerator: 'Ctrl+S'
+    })
+    expect(frameMessageToCommand({ type: 'RESET_ALL_KEYBINDINGS', id: 3 })).toEqual({
+      type: 'reset-all-keybindings',
+      id: 3
+    })
+    expect(frameMessageToCommand({ type: 'KEYBINDING_DEBUG_DUMP' })).toEqual({
+      type: 'keybinding-debug-dump'
     })
     expect(frameMessageToCommand({ type: 'READY', pane: 'general' })).toBeNull()
     expect(isGuestReady({ type: 'READY', pane: null })).toBe(true)

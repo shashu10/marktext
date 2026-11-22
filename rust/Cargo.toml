@@ -5,9 +5,12 @@ members = [
     "crates/marktext-ui-kit",
     "crates/marktext-wasm-host",
     "crates/mt-pref-general",
+    "crates/mt-pref-appearance",
     "crates/mt-pref-editor",
+    "crates/mt-pref-files",
     "crates/mt-pref-markdown",
     "crates/mt-pref-images",
+    "crates/mt-pref-keybindings",
 ]
 
 [workspace.package]

@@ -7,17 +7,27 @@ export type GuestMessage =
   | { type: 'SET_PREFERENCE'; key: string; value: unknown }
   | { type: 'PERSIST_PREFERENCE'; id: number; key: string; value: unknown }
   | { type: 'HOST_ACTION'; id: number; action: string; payload: unknown }
+  | { type: 'CHOOSE_DIRECTORY'; id: number }
   | { type: 'SCROLL_TO_HEADER'; slug: string }
   | { type: 'TOGGLE_READING_MODE'; readOnly: boolean }
   | { type: 'SPELLCHECKER_REMOVE_WORD'; id: number; word: string }
+  | { type: 'REQUEST_KEYBINDINGS' }
+  | { type: 'SAVE_KEYBINDING'; id: number; commandId: string; accelerator: string }
+  | { type: 'RESET_ALL_KEYBINDINGS'; id: number }
+  | { type: 'KEYBINDING_DEBUG_DUMP' }
 
 export type HostCommand =
   | { type: 'set-preference'; key: string; value: unknown }
   | { type: 'persist-preference'; id: number; key: string; value: unknown }
   | { type: 'host-action'; id: number; action: string; payload: unknown }
+  | { type: 'choose-directory'; id: number }
   | { type: 'scroll-to-header'; slug: string }
   | { type: 'toggle-reading-mode'; readOnly: boolean }
   | { type: 'spellchecker-remove-word'; id: number; word: string }
+  | { type: 'request-keybindings' }
+  | { type: 'save-keybinding'; id: number; commandId: string; accelerator: string }
+  | { type: 'reset-all-keybindings'; id: number }
+  | { type: 'keybinding-debug-dump' }
 
 export type PanePresentation = 'legacy' | 'wasm' | 'native'
 
@@ -74,6 +84,9 @@ export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   ) {
     return { type: 'host-action', id: message.id, action: message.action, payload: message.payload }
   }
+  if (message.type === 'CHOOSE_DIRECTORY' && typeof message.id === 'number') {
+    return { type: 'choose-directory', id: message.id }
+  }
   if (message.type === 'SCROLL_TO_HEADER' && typeof message.slug === 'string') {
     return { type: 'scroll-to-header', slug: message.slug }
   }
@@ -87,6 +100,28 @@ export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   ) {
     return { type: 'spellchecker-remove-word', id: message.id, word: message.word }
   }
+  if (message.type === 'REQUEST_KEYBINDINGS') {
+    return { type: 'request-keybindings' }
+  }
+  if (
+    message.type === 'SAVE_KEYBINDING' &&
+    typeof message.id === 'number' &&
+    typeof message.commandId === 'string' &&
+    typeof message.accelerator === 'string'
+  ) {
+    return {
+      type: 'save-keybinding',
+      id: message.id,
+      commandId: message.commandId,
+      accelerator: message.accelerator
+    }
+  }
+  if (message.type === 'RESET_ALL_KEYBINDINGS' && typeof message.id === 'number') {
+    return { type: 'reset-all-keybindings', id: message.id }
+  }
+  if (message.type === 'KEYBINDING_DEBUG_DUMP') {
+    return { type: 'keybinding-debug-dump' }
+  }
   return null
 }
 
@@ -98,7 +133,12 @@ export const isGuestMessage = (message: unknown): message is GuestMessage =>
     message.type === 'SET_PREFERENCE' ||
     message.type === 'PERSIST_PREFERENCE' ||
     message.type === 'HOST_ACTION' ||
+    message.type === 'CHOOSE_DIRECTORY' ||
     message.type === 'SCROLL_TO_HEADER' ||
     message.type === 'TOGGLE_READING_MODE' ||
-    message.type === 'SPELLCHECKER_REMOVE_WORD'
+    message.type === 'SPELLCHECKER_REMOVE_WORD' ||
+    message.type === 'REQUEST_KEYBINDINGS' ||
+    message.type === 'SAVE_KEYBINDING' ||
+    message.type === 'RESET_ALL_KEYBINDINGS' ||
+    message.type === 'KEYBINDING_DEBUG_DUMP'
   )

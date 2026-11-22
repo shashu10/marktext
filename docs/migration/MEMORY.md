@@ -36,6 +36,12 @@ Update the snapshot and clear the draft only when the status is `persisted`. On 
 
 Toggles and choice chips can keep using `SET_PREFERENCE` until a slice needs to show a save failure.
 
+## A text field that replaces the saved value (A2)
+
+The custom CSS box started empty and reported only the length of the saved stylesheet. Saving without typing wrote that empty string over the stylesheet. Font family and line width had the same hole, and a rejected save was shown only under the CSS box.
+
+`EditableTextState::use_keyed` starts empty, and `use_keyed_init` runs on the first frame only. Create the field with the snapshot text. If a later snapshot arrives, copy it in only while the field still equals the last snapshot it showed. Keystrokes move it off that baseline and stay on screen. Do the copy after the frame: replacing the text during render notifies the field while the pane is still drawing. On `failed`, leave the draft and show the error on that field.
+
 ## Labels that the bundled font cannot draw (A1)
 
 The canvas loads Liberation Sans only. A language name written in Chinese, Japanese, or Korean is invisible, which looks like a missing control rather than a font gap. Show an English label. The stored value stays the locale code, such as `zh-CN`.
