@@ -5,14 +5,14 @@ use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
     prelude::*, px, rgb,
 };
-use gpui_elements::editable_text::{EditableTextState, text_area, text_input};
+use gpui_elements::editable_text::{EditableTextState, StringStorage, text_area, text_input};
 use marktext_core::{HostBridge, MemoryHostBridge};
 use marktext_ui_kit::{UI_FONT, select_control, toggle};
 use serde_json::{Value, json};
 
 use crate::model::{
-    AppearanceModel, TextSave, ThemeMode, ZOOM_STEPS, font_family_ok, format_step, line_width_ok,
-    step_by, theme_label, theme_swatch, visible_themes, zoom_selected,
+    AppearanceModel, TextSave, ThemeMode, ZOOM_STEPS, draft_should_adopt, font_family_ok,
+    format_step, line_width_ok, step_by, theme_label, theme_swatch, visible_themes, zoom_selected,
 };
 
 pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
@@ -23,6 +23,14 @@ const INK: u32 = 0x1C1C1F;
 const MUTED: u32 = 0x5C5C66;
 const CHIP: u32 = 0xF4F4F5;
 const LINE: u32 = 0xD8D8DE;
+const SAVE_FAILED: &str = "Could not save this setting. The previous value was kept.";
+
+/// Saved text last copied into a field. A draft that still equals `baseline`
+/// can follow a newer snapshot. Keystrokes move the draft off `baseline`.
+struct BoundText {
+    entity: Entity<EditableTextState>,
+    baseline: String,
+}
 
 pub struct AppearancePane {
     bridge: Arc<MemoryHostBridge>,
@@ -32,10 +40,10 @@ pub struct AppearancePane {
     theme_mode: ThemeMode,
     format_error: Option<String>,
     search: Option<Entity<EditableTextState>>,
-    css: Option<Entity<EditableTextState>>,
-    editor_font: Option<Entity<EditableTextState>>,
-    code_font: Option<Entity<EditableTextState>>,
-    line_width: Option<Entity<EditableTextState>>,
+    css: Option<BoundText>,
+    editor_font: Option<BoundText>,
+    code_font: Option<BoundText>,
+    line_width: Option<BoundText>,
 }
 
 impl AppearancePane {
@@ -90,27 +98,120 @@ impl AppearancePane {
     pub fn accept_persist_result(&mut self, id: u64, persisted: bool, cx: &mut Context<Self>) {
         let applied = self.save.finish(id, persisted);
         if let Some((key, value)) = applied {
+            if let Some(text) = value.as_str() {
+                self.confirm_saved_text(&key, text);
+            }
             self.bridge.set_preference(key, value);
         }
         cx.notify();
     }
+
+    fn confirm_saved_text(&mut self, key: &str, saved: &str) {
+        let Some(field) = self.bound_text(key) else {
+            return;
+        };
+        field.baseline = saved.to_string();
+    }
+
+    fn adopt_saved_text(&mut self, key: &'static str, saved: String, cx: &mut Context<Self>) {
+        let Some(field) = self.bound_text(key) else {
+            return;
+        };
+        let current = field.entity.read(cx).as_str();
+        if !draft_should_adopt(current, &field.baseline, &saved) {
+            return;
+        }
+        field.baseline = saved.clone();
+        field
+            .entity
+            .update(cx, |state, cx| state.emplace(&saved, cx));
+    }
+
+    fn bound_text(&mut self, key: &str) -> Option<&mut BoundText> {
+        match key {
+            "customCss" => self.css.as_mut(),
+            "editorFontFamily" => self.editor_font.as_mut(),
+            "codeFontFamily" => self.code_font.as_mut(),
+            "editorLineWidth" => self.line_width.as_mut(),
+            _ => None,
+        }
+    }
+}
+
+/// The keyed state is created with the snapshot. A later snapshot is copied
+/// in after this frame, because replacing the text notifies that field while
+/// this pane is still drawing.
+fn bind_saved_text(
+    bound: &mut Option<BoundText>,
+    key: &'static str,
+    element_id: &'static str,
+    saved: &str,
+    window: &mut Window,
+    cx: &mut Context<AppearancePane>,
+) -> Entity<EditableTextState> {
+    let entity = EditableTextState::use_keyed_init(element_id, window, cx, {
+        let initial = saved.to_string();
+        move |_window, _cx| StringStorage::from(initial)
+    });
+    let adopt = match bound {
+        Some(field) => draft_should_adopt(field.entity.read(cx).as_str(), &field.baseline, saved),
+        None => {
+            let current = entity.read(cx).as_str().to_string();
+            *bound = Some(BoundText {
+                entity: entity.clone(),
+                baseline: current,
+            });
+            false
+        }
+    };
+    if adopt {
+        let saved = saved.to_string();
+        cx.defer_in(window, move |pane, _window, cx| {
+            pane.adopt_saved_text(key, saved, cx);
+        });
+    }
+    entity
 }
 
 impl Render for AppearancePane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let model = AppearanceModel::from_snapshot(&self.bridge.get_preferences());
         let search = EditableTextState::use_keyed("setting-theme-search", window, cx);
-        let css = EditableTextState::use_keyed("setting-customCss", window, cx);
-        let editor_font = EditableTextState::use_keyed("setting-editorFontFamily", window, cx);
-        let code_font = EditableTextState::use_keyed("setting-codeFontFamily", window, cx);
-        let line_width = EditableTextState::use_keyed("setting-editorLineWidth", window, cx);
+        let css = bind_saved_text(
+            &mut self.css,
+            "customCss",
+            "setting-customCss",
+            &model.custom_css,
+            window,
+            cx,
+        );
+        let editor_font = bind_saved_text(
+            &mut self.editor_font,
+            "editorFontFamily",
+            "setting-editorFontFamily",
+            &model.editor_font_family,
+            window,
+            cx,
+        );
+        let code_font = bind_saved_text(
+            &mut self.code_font,
+            "codeFontFamily",
+            "setting-codeFontFamily",
+            &model.code_font_family,
+            window,
+            cx,
+        );
+        let line_width = bind_saved_text(
+            &mut self.line_width,
+            "editorLineWidth",
+            "setting-editorLineWidth",
+            &model.editor_line_width,
+            window,
+            cx,
+        );
         self.search = Some(search.clone());
-        self.css = Some(css.clone());
-        self.editor_font = Some(editor_font.clone());
-        self.code_font = Some(code_font.clone());
-        self.line_width = Some(line_width.clone());
         let query = search.read(cx).as_str().to_string();
-        let saving = self.save.is_busy();
+        let pending = self.save.pending_key().map(str::to_string);
         let save_error = self.save.error_key.clone();
         let format_error = self.format_error.clone();
         let theme_mode = self.theme_mode;
@@ -137,8 +238,7 @@ impl Render for AppearancePane {
                 css_editor(
                     &view,
                     &css,
-                    &model.custom_css,
-                    saving,
+                    pending.as_deref() == Some("customCss"),
                     save_error.as_deref() == Some("customCss"),
                 ),
             ))
@@ -148,11 +248,14 @@ impl Render for AppearancePane {
                 typography_section(
                     &view,
                     &model,
-                    &editor_font,
-                    &code_font,
-                    &line_width,
-                    saving,
-                    &format_error,
+                    TypographyFields {
+                        editor_font: &editor_font,
+                        code_font: &code_font,
+                        line_width: &line_width,
+                        pending: pending.as_deref(),
+                        save_error: save_error.as_deref(),
+                        format_error: &format_error,
+                    },
                 ),
             ))
     }
@@ -318,25 +421,15 @@ fn theme_list(
 fn css_editor(
     view: &Entity<AppearancePane>,
     draft: &Entity<EditableTextState>,
-    current: &str,
     saving: bool,
     save_error: bool,
 ) -> impl IntoElement {
     let view = view.clone();
     let draft_for_save = draft.clone();
-    let current_note = if current.is_empty() {
-        "No custom CSS is saved.".to_string()
-    } else {
-        format!(
-            "Saved CSS is kept until you replace it. Current length: {} characters.",
-            current.len()
-        )
-    };
     div()
         .flex()
         .flex_col()
         .gap_2()
-        .child(div().text_sm().text_color(rgb(MUTED)).child(current_note))
         .child(
             text_area("setting-customCss")
                 .state(draft.downgrade())
@@ -357,9 +450,7 @@ fn css_editor(
                 view.update(app, |pane, cx| pane.commit_text("customCss", value, cx));
             },
         ))
-        .child(error_line(save_error.then_some(
-            "Could not save this setting. The previous value was kept.",
-        )))
+        .child(error_line(save_error.then_some(SAVE_FAILED)))
 }
 
 fn window_section(view: &Entity<AppearancePane>, model: &AppearanceModel) -> impl IntoElement {
@@ -426,15 +517,28 @@ fn window_section(view: &Entity<AppearancePane>, model: &AppearanceModel) -> imp
         ))
 }
 
+struct TypographyFields<'a> {
+    editor_font: &'a Entity<EditableTextState>,
+    code_font: &'a Entity<EditableTextState>,
+    line_width: &'a Entity<EditableTextState>,
+    pending: Option<&'a str>,
+    save_error: Option<&'a str>,
+    format_error: &'a Option<String>,
+}
+
 fn typography_section(
     view: &Entity<AppearancePane>,
     model: &AppearanceModel,
-    editor_font: &Entity<EditableTextState>,
-    code_font: &Entity<EditableTextState>,
-    line_width: &Entity<EditableTextState>,
-    saving: bool,
-    format_error: &Option<String>,
+    fields: TypographyFields<'_>,
 ) -> impl IntoElement {
+    let TypographyFields {
+        editor_font,
+        code_font,
+        line_width,
+        pending,
+        save_error,
+        format_error,
+    } = fields;
     div()
         .flex()
         .flex_col()
@@ -484,10 +588,10 @@ fn typography_section(
             id: "setting-editorFontFamily",
             title: "Font family",
             note: "Empty uses the built-in fallback fonts.",
-            current: &model.editor_font_family,
             draft: editor_font,
-            saving,
+            saving: pending == Some("editorFontFamily"),
             invalid: format_error.as_deref() == Some("editorFontFamily"),
+            rejected: save_error == Some("editorFontFamily"),
         }))
         .child(font_field(FontField {
             view,
@@ -495,10 +599,10 @@ fn typography_section(
             id: "setting-codeFontFamily",
             title: "Code font family",
             note: "Applies to inline code and code blocks. Empty uses the built-in fallback fonts.",
-            current: &model.code_font_family,
             draft: code_font,
-            saving,
+            saving: pending == Some("codeFontFamily"),
             invalid: format_error.as_deref() == Some("codeFontFamily"),
+            rejected: save_error == Some("codeFontFamily"),
         }))
         .child(font_field(FontField {
             view,
@@ -506,14 +610,10 @@ fn typography_section(
             id: "setting-editorLineWidth",
             title: "Maximum editor content width",
             note: "A number followed by px, ch, or %, such as 800px. Empty uses the default width.",
-            current: if model.editor_line_width.is_empty() {
-                "default"
-            } else {
-                model.editor_line_width.as_str()
-            },
             draft: line_width,
-            saving,
+            saving: pending == Some("editorLineWidth"),
             invalid: format_error.as_deref() == Some("editorLineWidth"),
+            rejected: save_error == Some("editorLineWidth"),
         }))
 }
 
@@ -523,10 +623,10 @@ struct FontField<'a> {
     id: &'static str,
     title: &'static str,
     note: &'static str,
-    current: &'a str,
     draft: &'a Entity<EditableTextState>,
     saving: bool,
     invalid: bool,
+    rejected: bool,
 }
 
 fn font_field(field: FontField<'_>) -> impl IntoElement {
@@ -536,10 +636,10 @@ fn font_field(field: FontField<'_>) -> impl IntoElement {
         id,
         title,
         note,
-        current,
         draft,
         saving,
         invalid,
+        rejected,
     } = field;
     let view = view.clone();
     let draft_for_save = draft.clone();
@@ -548,12 +648,7 @@ fn font_field(field: FontField<'_>) -> impl IntoElement {
         .flex_col()
         .gap_2()
         .child(div().text_color(rgb(INK)).child(title))
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(MUTED))
-                .child(format!("Current: {current}. {note}")),
-        )
+        .child(div().text_sm().text_color(rgb(MUTED)).child(note))
         .child(
             div()
                 .flex()
@@ -591,10 +686,20 @@ fn font_field(field: FontField<'_>) -> impl IntoElement {
                     },
                 )),
         )
-        .child(error_line(invalid.then_some(match key {
+        .child(error_line(text_field_error(key, invalid, rejected)))
+}
+
+fn text_field_error(key: &str, invalid: bool, rejected: bool) -> Option<&'static str> {
+    if invalid {
+        return Some(match key {
             "editorLineWidth" => "Enter a number followed by px, ch, or %, such as 800px.",
             _ => "The font family can't start or end with a space.",
-        })))
+        });
+    }
+    if rejected {
+        return Some(SAVE_FAILED);
+    }
+    None
 }
 
 fn stepper(
@@ -737,4 +842,126 @@ fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -
 
 fn write_back(view: &Entity<AppearancePane>, key: &'static str, value: Value, app: &mut App) {
     view.update(app, |pane, cx| pane.write(key, value, cx));
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::*;
+    use gpui::TestApp;
+
+    #[test]
+    fn a_rejected_typography_save_is_shown_on_that_field() {
+        assert_eq!(
+            text_field_error("editorFontFamily", false, true),
+            Some(SAVE_FAILED)
+        );
+        assert_eq!(
+            text_field_error("editorLineWidth", false, true),
+            Some(SAVE_FAILED)
+        );
+        assert_eq!(
+            text_field_error("codeFontFamily", false, true),
+            Some(SAVE_FAILED)
+        );
+        assert!(
+            text_field_error("editorLineWidth", true, true)
+                .is_some_and(|message| message.contains("px"))
+        );
+        assert!(text_field_error("editorFontFamily", false, false).is_none());
+    }
+
+    fn field_text(field: &Option<BoundText>, cx: &gpui::App) -> String {
+        field
+            .as_ref()
+            .expect("text field")
+            .entity
+            .read(cx)
+            .as_str()
+            .to_string()
+    }
+
+    #[test]
+    fn saved_stylesheet_fills_the_field_without_replacing_an_edit() {
+        let mut app = TestApp::new();
+        let bridge = Arc::new(MemoryHostBridge::with_defaults());
+        bridge.set_preference("customCss".to_string(), json!("h1 { color: red }"));
+        bridge.set_preference("editorFontFamily".to_string(), json!("Iosevka"));
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let recorded = Rc::clone(&calls);
+        let bridge_for_view = Arc::clone(&bridge);
+        let mut window = app.open_window(move |_window, _cx| {
+            AppearancePane::new(
+                bridge_for_view,
+                Rc::new(|_, _| {}),
+                Rc::new(move |id, key, value| recorded.borrow_mut().push((id, key, value))),
+            )
+        });
+
+        window.draw();
+        window.read(|pane, cx| {
+            assert_eq!(field_text(&pane.css, cx), "h1 { color: red }");
+            assert_eq!(field_text(&pane.editor_font, cx), "Iosevka");
+        });
+
+        window.update(|pane, _window, cx| {
+            let value = field_text(&pane.css, cx);
+            pane.commit_text("customCss", value, cx);
+        });
+        assert_eq!(calls.borrow()[0].2, json!("h1 { color: red }"));
+
+        window.update(|pane, _window, cx| {
+            pane.css
+                .as_ref()
+                .expect("css")
+                .entity
+                .update(cx, |state, cx| state.emplace("h1 { color: blue }", cx));
+        });
+        bridge.set_preference("customCss".to_string(), json!("h1 { color: green }"));
+        window.update(|_pane, _window, cx| cx.notify());
+        window.draw();
+        window.read(|pane, cx| assert_eq!(field_text(&pane.css, cx), "h1 { color: blue }"));
+
+        let css_id = calls.borrow()[0].0;
+        window.update(|pane, _window, cx| pane.accept_persist_result(css_id, true, cx));
+        window.update(|pane, _window, cx| {
+            pane.line_width
+                .as_ref()
+                .expect("width")
+                .entity
+                .update(cx, |state, cx| state.emplace("90ch", cx));
+            pane.commit_text("editorLineWidth", "90ch".to_string(), cx);
+        });
+        let width_id = calls
+            .borrow()
+            .iter()
+            .find(|(_, key, _)| key == "editorLineWidth")
+            .expect("width save")
+            .0;
+        window.update(|pane, _window, cx| pane.accept_persist_result(width_id, false, cx));
+        window.read(|pane, cx| {
+            assert_eq!(pane.save.error_key.as_deref(), Some("editorLineWidth"));
+            assert_eq!(field_text(&pane.line_width, cx), "90ch");
+        });
+    }
+
+    #[test]
+    fn a_later_snapshot_fills_a_clean_stylesheet_field() {
+        let mut app = TestApp::new();
+        let bridge = Arc::new(MemoryHostBridge::with_defaults());
+        let bridge_for_view = Arc::clone(&bridge);
+        let mut window = app.open_window(move |_window, _cx| {
+            AppearancePane::new(bridge_for_view, Rc::new(|_, _| {}), Rc::new(|_, _, _| {}))
+        });
+
+        window.draw();
+        window.read(|pane, cx| assert_eq!(field_text(&pane.css, cx), ""));
+
+        bridge.set_preference("customCss".to_string(), json!("p { margin: 0 }"));
+        window.update(|_pane, _window, cx| cx.notify());
+        window.draw();
+        window.read(|pane, cx| assert_eq!(field_text(&pane.css, cx), "p { margin: 0 }"));
+    }
 }

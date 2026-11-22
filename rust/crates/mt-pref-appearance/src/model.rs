@@ -243,6 +243,12 @@ pub fn line_width_ok(value: &str) -> bool {
     unit_at > 0 && matches!(&value[unit_at..], "ch" | "px" | "%")
 }
 
+/// A field still showing `baseline` should take a newer snapshot.
+/// Text that has moved off `baseline` is an unsaved edit and stays on screen.
+pub fn draft_should_adopt(current: &str, baseline: &str, saved: &str) -> bool {
+    current == baseline && current != saved
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct PendingText {
     id: u64,
@@ -267,8 +273,8 @@ impl TextSave {
         }
     }
 
-    pub fn is_busy(&self) -> bool {
-        self.pending.is_some()
+    pub fn pending_key(&self) -> Option<&str> {
+        self.pending.as_ref().map(|pending| pending.key.as_str())
     }
 
     pub fn request(&mut self, key: String, value: Value) -> Option<u64> {
@@ -384,5 +390,18 @@ mod tests {
             Some(("editorLineWidth".to_string(), json!("80ch")))
         );
         assert!(save.error_key.is_none());
+    }
+
+    #[test]
+    fn clean_draft_adopts_saved_text_and_an_edit_stays() {
+        assert!(draft_should_adopt("", "", "h1 { color: red }"));
+        assert!(draft_should_adopt("Open Sans", "Open Sans", "Iosevka"));
+        assert!(!draft_should_adopt(
+            "h1 { color: blue }",
+            "",
+            "h1 { color: red }"
+        ));
+        assert!(!draft_should_adopt("Iosevka", "Open Sans", "Open Sans"));
+        assert!(!draft_should_adopt("80ch", "80ch", "80ch"));
     }
 }

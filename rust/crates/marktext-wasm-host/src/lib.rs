@@ -12,6 +12,10 @@ use mt_pref_appearance::AppearancePane;
 use mt_pref_general::GeneralPane;
 use serde_json::Value;
 
+/// Each pane numbers its own saves from 1. Appearance ids are shifted so a
+/// result for one pane cannot complete the other pane's in-flight save.
+const APPEARANCE_SAVE_ID_BASE: u64 = 1 << 32;
+
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
@@ -33,7 +37,7 @@ impl HostView {
             AppearancePane::new(
                 bridge,
                 Rc::new(publish_preference),
-                Rc::new(publish_persist),
+                Rc::new(publish_appearance_persist),
             )
         });
         Self {
@@ -50,13 +54,16 @@ impl HostView {
     pub fn apply(&mut self, message: &HostToGuest, cx: &mut Context<Self>) -> Option<GuestToHost> {
         if let HostToGuest::PreferenceResult { id, status } = message {
             let persisted = status == "persisted";
-            let request_id = *id;
-            self.general.update(cx, |pane, cx| {
-                pane.accept_persist_result(request_id, persisted, cx);
-            });
-            self.appearance.update(cx, |pane, cx| {
-                pane.accept_persist_result(request_id, persisted, cx);
-            });
+            let (pane, request_id) = save_result_target(*id);
+            if pane == "appearance" {
+                self.appearance.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+            } else {
+                self.general.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+            }
             return None;
         }
         let reply = self.session.apply(message);
@@ -106,6 +113,18 @@ fn placeholder(view: &HostView) -> impl IntoElement {
         ))
 }
 
+fn save_result_target(id: u64) -> (&'static str, u64) {
+    if id >= APPEARANCE_SAVE_ID_BASE {
+        ("appearance", id - APPEARANCE_SAVE_ID_BASE)
+    } else {
+        ("general", id)
+    }
+}
+
+fn publish_appearance_persist(id: u64, key: String, value: Value) {
+    publish_persist(id.saturating_add(APPEARANCE_SAVE_ID_BASE), key, value);
+}
+
 /// Stage 1 transport for a pane write. Native builds keep the value in the bridge only.
 pub fn publish_persist(id: u64, key: String, value: Value) {
     #[cfg(target_family = "wasm")]
@@ -137,4 +156,18 @@ pub fn post_to_parent(reply: &GuestToHost) {
         return;
     };
     let _ = parent.post_message(&value, "*");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_results_stay_on_the_pane_that_asked() {
+        assert_eq!(save_result_target(1), ("general", 1));
+        assert_eq!(
+            save_result_target(APPEARANCE_SAVE_ID_BASE + 1),
+            ("appearance", 1)
+        );
+    }
 }
