@@ -9,6 +9,7 @@ members = [
     "crates/mt-pref-editor",
     "crates/mt-pref-files",
     "crates/mt-pref-markdown",
+    "crates/mt-pref-keybindings",
 ]
 
 [workspace.package]

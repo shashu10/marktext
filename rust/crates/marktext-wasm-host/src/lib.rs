@@ -1,6 +1,6 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
 //! this view answers with `GuestToHost`. Preference panes mount here as their
-//! crates land; unknown panes still use the placeholder.
+//! crates land; unmigrated panes still use the placeholder.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use mt_pref_appearance::AppearancePane;
 use mt_pref_editor::EditorPane;
 use mt_pref_files::FilesPane;
 use mt_pref_general::GeneralPane;
+use mt_pref_keybindings::{KeybindingHostRequest, KeybindingsPane};
 use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
@@ -26,6 +27,7 @@ pub struct HostView {
     editor: gpui::Entity<EditorPane>,
     files: gpui::Entity<FilesPane>,
     markdown: gpui::Entity<MarkdownPane>,
+    keybindings: gpui::Entity<KeybindingsPane>,
 }
 
 impl HostView {
@@ -68,6 +70,7 @@ impl HostView {
                 Rc::new(publish_persist),
             )
         });
+        let keybindings = cx.new(|cx| KeybindingsPane::new(Rc::new(publish_keybinding), cx));
         Self {
             session,
             general,
@@ -75,6 +78,7 @@ impl HostView {
             editor,
             files,
             markdown,
+            keybindings,
         }
     }
 
@@ -133,6 +137,44 @@ impl HostView {
                 });
                 return None;
             }
+            HostToGuest::Keybindings {
+                commands,
+                is_mac,
+                show_debug,
+                loading,
+                load_error,
+            } => {
+                self.keybindings.update(cx, |pane, cx| {
+                    pane.apply_snapshot(
+                        commands,
+                        *is_mac,
+                        *show_debug,
+                        *loading,
+                        *load_error,
+                        cx,
+                    );
+                });
+                return None;
+            }
+            HostToGuest::KeybindingResult {
+                id,
+                status,
+                commands,
+                conflict_accelerator,
+                conflict_command_ids,
+            } => {
+                self.keybindings.update(cx, |pane, cx| {
+                    pane.accept_result(
+                        *id,
+                        status,
+                        commands.clone(),
+                        conflict_accelerator.clone(),
+                        conflict_command_ids.clone(),
+                        cx,
+                    );
+                });
+                return None;
+            }
             _ => {}
         }
         let reply = self.session.apply(message);
@@ -141,6 +183,7 @@ impl HostView {
         self.editor.update(cx, |_pane, cx| cx.notify());
         self.files.update(cx, |_pane, cx| cx.notify());
         self.markdown.update(cx, |_pane, cx| cx.notify());
+        self.keybindings.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -154,6 +197,7 @@ impl Render for HostView {
             "editor" => self.editor.clone().into_any_element(),
             "files" => self.files.clone().into_any_element(),
             "markdown" => self.markdown.clone().into_any_element(),
+            "keybindings" => self.keybindings.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)
@@ -196,6 +240,31 @@ fn save_result_target(id: u64) -> (&'static str, u64) {
 
 fn publish_appearance_persist(id: u64, key: String, value: Value) {
     publish_persist(id.saturating_add(APPEARANCE_SAVE_ID_BASE), key, value);
+}
+
+fn publish_keybinding(request: KeybindingHostRequest) {
+    #[cfg(target_family = "wasm")]
+    {
+        let message = match request {
+            KeybindingHostRequest::Reload => GuestToHost::RequestKeybindings,
+            KeybindingHostRequest::Save {
+                id,
+                command_id,
+                accelerator,
+            } => GuestToHost::SaveKeybinding {
+                id,
+                command_id,
+                accelerator,
+            },
+            KeybindingHostRequest::ResetAll { id } => GuestToHost::ResetAllKeybindings { id },
+            KeybindingHostRequest::DebugDump => GuestToHost::KeybindingDebugDump,
+        };
+        post_to_parent(&message);
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = request;
+    }
 }
 
 /// Stage 1 transport for a pane write. Native builds keep the value in the bridge only.

@@ -29,14 +29,17 @@ impl PaneRouter {
                 self.active.clone_from(pane);
                 Some(GuestToHost::PaneChanged { pane: pane.clone() })
             }
-            // Preference payloads belong to `GuestSession`. Acknowledging them
-            // here would report success without storing anything.
+            // Preference / keybinding payloads belong to `GuestSession` or the
+            // pane view. Acknowledging them here would report success without
+            // storing anything.
             HostToGuest::Preferences { .. }
             | HostToGuest::PreferencePatch { .. }
             | HostToGuest::PreferenceResult { .. }
             | HostToGuest::DirectoryChosen { .. }
             | HostToGuest::SpellcheckerInfo { .. }
-            | HostToGuest::SpellcheckerRemoveResult { .. } => None,
+            | HostToGuest::SpellcheckerRemoveResult { .. }
+            | HostToGuest::Keybindings { .. }
+            | HostToGuest::KeybindingResult { .. } => None,
         }
     }
 }

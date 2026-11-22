@@ -31,8 +31,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { usePreferencesStore } from '@/store/preferences'
 import { useEditorStore } from '@/store/editor'
-import bus from '@/bus'
+import { useKeybindingsStore } from '@/store/keybindings'
 import { isMac } from '@/util'
+import bus from '@/bus'
 import { SpellChecker } from '@/spellchecker'
 import { frameMessageToCommand, isGuestReady, paneChangedName, paneHostModel } from './protocol'
 
@@ -50,6 +51,7 @@ const hasFallthrough = computed(() => Object.keys(attrs).length > 0)
 
 const frame = ref<HTMLIFrameElement | null>(null)
 const preferences = usePreferencesStore()
+const keybindings = useKeybindingsStore()
 
 const migrationInput = (): { devBuild: boolean; overrideEnvironment?: string; overridesRaw?: string } => {
   const env = window.process?.env
@@ -133,6 +135,71 @@ const sendSnapshot = (): void => {
   void sendSpellcheckerInfo()
 }
 
+const keybindingCommandsPayload = () => keybindings.commands.map(command => ({
+  id: command.id,
+  description: command.description,
+  accelerator: command.accelerator,
+  defaultAccelerator: command.defaultAccelerator
+}))
+
+const sendKeybindings = async (): Promise<void> => {
+  if (props.pane !== 'keybindings') return
+  post({
+    type: 'KEYBINDINGS',
+    commands: [],
+    isMac,
+    showDebug: Boolean(window.marktext?.env?.debug),
+    loading: true,
+    loadError: false
+  })
+  await keybindings.ensureLoaded()
+  post({
+    type: 'KEYBINDINGS',
+    commands: keybindingCommandsPayload(),
+    isMac,
+    showDebug: Boolean(window.marktext?.env?.debug),
+    loading: keybindings.loading,
+    loadError: keybindings.loadError
+  })
+}
+
+const saveKeybinding = async (id: number, commandId: string, accelerator: string): Promise<void> => {
+  await keybindings.change(commandId, accelerator)
+  if (keybindings.conflict) {
+    post({
+      type: 'KEYBINDING_RESULT',
+      id,
+      status: 'conflict',
+      conflictAccelerator: keybindings.conflict.accelerator,
+      conflictCommandIds: keybindings.conflict.commands.map(command => command.id),
+      commands: keybindingCommandsPayload()
+    })
+    return
+  }
+  const entry = keybindings.commands.find(command => command.id === commandId)
+  const applied = entry != null && (
+    accelerator === ''
+      ? entry.accelerator === ''
+      : entry.accelerator === accelerator || entry.accelerator === entry.defaultAccelerator
+  )
+  post({
+    type: 'KEYBINDING_RESULT',
+    id,
+    status: applied ? 'persisted' : 'failed',
+    commands: keybindingCommandsPayload()
+  })
+}
+
+const resetAllKeybindings = async (id: number): Promise<void> => {
+  await keybindings.resetAll()
+  post({
+    type: 'KEYBINDING_RESULT',
+    id,
+    status: keybindings.hasCustomBindings ? 'failed' : 'persisted',
+    commands: keybindingCommandsPayload()
+  })
+}
+
 const onWindowMessage = (event: MessageEvent): void => {
   if (event.source !== frame.value?.contentWindow) return
   // The measure harness waits for this attribute and a sized canvas. The
@@ -144,6 +211,7 @@ const onWindowMessage = (event: MessageEvent): void => {
   if (isGuestReady(event.data)) {
     post({ type: 'SET_PANE', pane: props.pane })
     sendSnapshot()
+    void sendKeybindings()
   }
   const command = frameMessageToCommand(event.data)
   if (!command) return
@@ -170,6 +238,22 @@ const onWindowMessage = (event: MessageEvent): void => {
     bus.emit('scroll-to-header', command.slug)
     return
   }
+  if (command.type === 'request-keybindings') {
+    void sendKeybindings()
+    return
+  }
+  if (command.type === 'save-keybinding') {
+    void saveKeybinding(command.id, command.commandId, command.accelerator)
+    return
+  }
+  if (command.type === 'reset-all-keybindings') {
+    void resetAllKeybindings(command.id)
+    return
+  }
+  if (command.type === 'keybinding-debug-dump') {
+    window.electron.ipcRenderer.send('mt::keybinding-debug-dump-keyboard-info')
+    return
+  }
   const editor = useEditorStore()
   if (editor.currentFile) {
     void editor.SET_READ_ONLY(editor.currentFile.id, command.readOnly)
@@ -182,6 +266,7 @@ const hello = (): void => {
   post({ type: 'HOST_HELLO' })
   post({ type: 'SET_PANE', pane: props.pane })
   sendSnapshot()
+  void sendKeybindings()
 }
 
 onMounted(() => {
@@ -195,6 +280,8 @@ onBeforeUnmount(() => {
 watch(() => props.pane, (pane) => {
   frame.value?.removeAttribute('data-pane-ready')
   post({ type: 'SET_PANE', pane })
+  void sendSpellcheckerInfo()
+  void sendKeybindings()
 })
 
 watch(() => preferences.$state, () => {
