@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::bridge::MemoryHostBridge;
 use crate::messages::{GuestToHost, HostToGuest};
 use crate::router::PaneRouter;
@@ -8,14 +10,14 @@ use crate::router::PaneRouter;
 /// `PaneRouter` does not acknowledge those messages on its own.
 pub struct GuestSession {
     router: PaneRouter,
-    bridge: MemoryHostBridge,
+    bridge: Arc<MemoryHostBridge>,
 }
 
 impl GuestSession {
     pub fn new(initial_pane: impl Into<String>) -> Self {
         Self {
             router: PaneRouter::new(initial_pane),
-            bridge: MemoryHostBridge::with_defaults(),
+            bridge: Arc::new(MemoryHostBridge::with_defaults()),
         }
     }
 
@@ -25,6 +27,11 @@ impl GuestSession {
 
     pub fn bridge(&self) -> &MemoryHostBridge {
         &self.bridge
+    }
+
+    /// Shared with a pane view so a control write and a host snapshot update the same values.
+    pub fn bridge_handle(&self) -> Arc<MemoryHostBridge> {
+        Arc::clone(&self.bridge)
     }
 
     pub fn apply(&mut self, message: &HostToGuest) -> Option<GuestToHost> {

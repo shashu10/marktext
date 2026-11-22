@@ -45,6 +45,7 @@ pub fn toggle(
         .on_change(move |next, window, app| on_change(*next, window, app))
         .with_state(|row, checked, _disabled| {
             row.font_family(UI_FONT)
+                .w(px(72.))
                 .px_3()
                 .py_1()
                 .rounded_md()
@@ -81,6 +82,7 @@ pub fn select_control(
         .id(id_prefix.clone())
         .font_family(UI_FONT)
         .flex()
+        .flex_wrap()
         .gap_2();
     for (index, (value, label)) in options.into_iter().enumerate() {
         let value = value.into();

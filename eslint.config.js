@@ -26,6 +26,9 @@ export default [
       // merge two flat configs.
       'packages/muya/**',
       'packages/desktop/src/renderer/src/assets/symbolIcon/index.js',
+      // wasm-bindgen output. Regenerated into the gitignored host glue.
+      'packages/desktop/src/renderer/public/gpui-host/*.js',
+      'packages/desktop/src/renderer/public/gpui-host/*.d.ts',
       '**/*.min.json',
       // Playwright writes these next to its config (packages/desktop/), not at
       // the repo root, so they need the `**/` prefix to be ignored at all.
