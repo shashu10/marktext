@@ -1,0 +1,23 @@
+[package]
+name = "marktext-wasm-host"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Single-canvas GPUI host and postMessage bridge for an Electron iframe."
+
+[dependencies]
+marktext-core = { path = "../marktext-core" }
+marktext-ui-kit = { path = "../marktext-ui-kit" }
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui_elements.workspace = true
+serde_json.workspace = true
+async-channel.workspace = true
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen = "=0.2.130"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "MessageEvent"] }
+serde-wasm-bindgen = "0.6"

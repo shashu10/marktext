@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MarkText GPUI</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #141416; }
+      canvas { position: fixed; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      const post = (message) => parent.postMessage(message, '*')
+      try {
+        const host = await import('./marktext-wasm-host.js')
+        await host.default()
+      } catch (error) {
+        console.error('GPUI wasm host failed to start', error)
+        // The wasm glue is produced by wasm-bindgen and is not committed.
+        // This stub keeps the postMessage contract alive until that file exists.
+        window.addEventListener('message', (event) => {
+          const data = event.data
+          if (!data || typeof data !== 'object') return
+          if (data.type === 'HOST_HELLO') post({ type: 'READY', pane: null })
+          else if (data.type === 'SET_PANE') post({ type: 'PANE_CHANGED', pane: data.pane })
+          else if (data.type === 'PREFERENCES' || data.type === 'PREFERENCE_PATCH') {
+            post({ type: 'PREFERENCES_APPLIED' })
+          }
+        })
+        post({ type: 'READY', pane: null })
+      }
+    </script>
+  </body>
+</html>

@@ -12,7 +12,9 @@ const ENV_ALLOWLIST = [
   'MARKTEXT_VERSION_STRING',
   'MARKTEXT_RIPGREP_PATH',
   'PATH',
-  'HOME'
+  'HOME',
+  'MARKTEXT_MIGRATION_ENV',
+  'MARKTEXT_MIGRATION_OVERRIDES'
 ]
 
 const pickEnv = (): Record<string, string> => {
