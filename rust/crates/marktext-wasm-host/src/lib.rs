@@ -1,18 +1,21 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
-//! this view answers with `GuestToHost`. The General pane is mounted here;
-//! other panes still use the placeholder until their crates land.
+//! this view answers with `GuestToHost`. The General and Appearance panes are
+//! mounted here; other panes still use the placeholder until their crates land.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
+use mt_pref_appearance::AppearancePane;
 use mt_pref_general::GeneralPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    appearance: gpui::Entity<AppearancePane>,
 }
 
 impl HostView {
@@ -21,12 +24,23 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
+                Arc::clone(&bridge),
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+            )
+        });
+        let appearance = cx.new(|_cx| {
+            AppearancePane::new(
                 bridge,
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
         });
-        Self { session, general }
+        Self {
+            session,
+            general,
+            appearance,
+        }
     }
 
     pub fn active_pane(&self) -> &str {
@@ -40,10 +54,14 @@ impl HostView {
             self.general.update(cx, |pane, cx| {
                 pane.accept_persist_result(request_id, persisted, cx);
             });
+            self.appearance.update(cx, |pane, cx| {
+                pane.accept_persist_result(request_id, persisted, cx);
+            });
             return None;
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.appearance.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -53,6 +71,8 @@ impl Render for HostView {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
         let content: AnyElement = if self.session.active_pane() == "general" {
             self.general.clone().into_any_element()
+        } else if self.session.active_pane() == "appearance" {
+            self.appearance.clone().into_any_element()
         } else {
             placeholder(self).into_any_element()
         };
