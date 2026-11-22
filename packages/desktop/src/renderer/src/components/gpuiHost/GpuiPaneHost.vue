@@ -32,6 +32,8 @@ import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { usePreferencesStore } from '@/store/preferences'
 import { useEditorStore } from '@/store/editor'
 import bus from '@/bus'
+import { isMac } from '@/util'
+import { SpellChecker } from '@/spellchecker'
 import { frameMessageToCommand, isGuestReady, paneChangedName, paneHostModel } from './protocol'
 
 // router-view's class is the preferences scroll container. A bare slot drops
@@ -75,11 +77,46 @@ const persistPreference = async (id: number, key: string, value: unknown): Promi
   post({ type: 'PREFERENCE_RESULT', id, status })
 }
 
+const removeSpellcheckerWord = async (id: number, word: string): Promise<void> => {
+  let ok = false
+  try {
+    ok = Boolean(await window.electron.ipcRenderer.invoke('mt::spellchecker-remove-word', word))
+  } catch {
+    // leave ok false
+  }
+  post({ type: 'SPELLCHECKER_REMOVE_RESULT', id, ok })
+}
+
+const sendSpellcheckerInfo = async (): Promise<void> => {
+  if (props.pane !== 'editor') return
+  let dictionaries: string[] = []
+  let words: string[] = []
+  if (!isMac) {
+    try {
+      dictionaries = await SpellChecker.getAvailableDictionaries()
+    } catch {
+      dictionaries = ['en-US']
+    }
+    try {
+      words = await window.electron.ipcRenderer.invoke('mt::spellchecker-get-custom-dictionary-words')
+    } catch {
+      words = []
+    }
+  }
+  post({
+    type: 'SPELLCHECKER_INFO',
+    isOsx: isMac,
+    dictionaries,
+    words
+  })
+}
+
 const sendSnapshot = (): void => {
   post({
     type: 'PREFERENCES',
     snapshot: JSON.parse(JSON.stringify(preferences.$state)) as Record<string, unknown>
   })
+  void sendSpellcheckerInfo()
 }
 
 const onWindowMessage = (event: MessageEvent): void => {
@@ -98,10 +135,17 @@ const onWindowMessage = (event: MessageEvent): void => {
   if (!command) return
   if (command.type === 'set-preference') {
     window.electron.ipcRenderer.send('mt::set-user-preference', { [command.key]: command.value })
+    if (command.key === 'spellcheckerLanguage' && typeof command.value === 'string') {
+      void window.electron.ipcRenderer.invoke('mt::spellchecker-switch-language', command.value)
+    }
     return
   }
   if (command.type === 'persist-preference') {
     void persistPreference(command.id, command.key, command.value)
+    return
+  }
+  if (command.type === 'spellchecker-remove-word') {
+    void removeSpellcheckerWord(command.id, command.word)
     return
   }
   if (command.type === 'scroll-to-header') {

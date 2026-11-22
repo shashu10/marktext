@@ -325,9 +325,18 @@ This fork is executing a **Strangler-Fig Electron → Rust (GPUI)** migration wh
 
 **Key Migration Invariants for All Agents:**
 
-- **Write GPUI views once:** Target `gpui-ce` (`default-features = false`) + `gpui_ce_platform` (`default-features = false`) so every view compiles cleanly to both `wasm32-unknown-unknown` (Stage 1) and native OS GPUI (Stage 2) with no platform `#[cfg]` inside UI views.
-- **Route all host I/O through `HostBridge`:** Never bypass the shared preference/IPC bridge or mutate disconnected local state; preference writes must sync to Electron Main and broadcast to open Editor windows.
+- **Write GPUI views once:** Target `gpui-ce` (`default-features = false`) + `gpui_ce_platform` (`default-features = false`) so every view compiles cleanly to both `wasm32-unknown-unknown` (Stage 1) and native OS GPUI (Stage 2) with no platform `#[cfg]` inside UI views. Keep crate dependencies strictly acyclic (`marktext-core` [UI-agnostic] → `marktext-ui-kit` → leaf `mt-*` crates → host crates).
+- **Route all host I/O through `HostBridge`:** Never bypass the shared preference/IPC bridge or mutate disconnected local state; preference writes must sync to Electron Main and broadcast to open Editor windows. Preserve 100% in-place compatibility with existing `preferences.json` and markdown files.
 - **Gate every slice behind a feature flag** (`legacy` | `rust-wasm` | `gpui-native` | `shadow`) and preserve parity in both WYSIWYG and Source Code modes where applicable.
+- **Translate first, redesign second:** Preserve exact legacy behavior, control types, and visual layout during porting; do not mix opportunistic UX redesigns or architectural refactors into a slice PR. Port the slice's full logic cleanly to Rust (do not leave half the behavior or I/O stranded in Vue/TS).
+- **Protect the oracle (no stubbing, no test weakening, no waivers):** Never delete, skip, or relax existing unit/E2E/conformance tests to make CI pass; never stub out failing functions or leave placeholder stand-in constants just to compile; never apply CI waiver/override labels. _If you need a paragraph-long comment to justify a workaround, the code is wrong — fix the code._
+- **Reuse `marktext-ui-kit` & wire keyboard navigation:** Browsers give text editing (selection, copy/paste, undo, IME), scroll views, and Tab focus traversal for free; GPUI does not. Always use shared `marktext-ui-kit` primitives and explicitly wire Tab/Shift-Tab focus order, Enter/Space activation, and Esc dismissal.
+- **Guard against TS/JS → Rust porting traps (compiling ≠ correct):**
+  - **JSON numeric types:** JS has one `number` type — pick `i64`/`u64` vs `f64` explicitly to match `schema.json` / IPC contracts so integers never serialize as `42.0` and fractional timings aren't truncated.
+  - **JS `||` truthiness vs Rust `Option`:** JS `err || "fallback"` replaces `""`, while Rust `Option::unwrap_or("fallback")` preserves `Some("")`; filter empty strings explicitly when porting JS `||` fallbacks.
+  - **No side effects inside `debug_assert!`:** `debug_assert!` is erased in `--release`; verify both debug and release builds.
+  - **Event loop, memory & OS subtleties:** Never block Electron's main/renderer event loop with heavy synchronous bridge work, avoid cloning large markdown buffers across the bridge, and set `CREATE_NO_WINDOW` when spawning Windows child processes (e.g., `ripgrep`, `pandoc`).
+- **Parallel agent git & worktree hygiene:** Never run `git stash`, `git reset --hard`, or read/merge commits from another agent's branch or worktree; commit only files belonging to your claimed slice.
 
 ### Cloud VM Verification & PR Rules
 
