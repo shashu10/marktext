@@ -3,18 +3,25 @@
 //! crates land; unknown panes still use the placeholder.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
+use mt_pref_appearance::AppearancePane;
 use mt_pref_editor::EditorPane;
 use mt_pref_general::GeneralPane;
 use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
+/// Each pane numbers its own saves from 1. Appearance ids are shifted so a
+/// result for one pane cannot complete another pane's in-flight save.
+const APPEARANCE_SAVE_ID_BASE: u64 = 1 << 32;
+
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    appearance: gpui::Entity<AppearancePane>,
     editor: gpui::Entity<EditorPane>,
     markdown: gpui::Entity<MarkdownPane>,
 }
@@ -25,14 +32,21 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
-                bridge.clone(),
+                Arc::clone(&bridge),
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
         });
+        let appearance = cx.new(|_cx| {
+            AppearancePane::new(
+                Arc::clone(&bridge),
+                Rc::new(publish_preference),
+                Rc::new(publish_appearance_persist),
+            )
+        });
         let editor = cx.new(|_cx| {
             EditorPane::new(
-                bridge.clone(),
+                Arc::clone(&bridge),
                 Rc::new(publish_preference),
                 Rc::new(publish_word_removal),
             )
@@ -47,6 +61,7 @@ impl HostView {
         Self {
             session,
             general,
+            appearance,
             editor,
             markdown,
         }
@@ -60,13 +75,19 @@ impl HostView {
         match message {
             HostToGuest::PreferenceResult { id, status } => {
                 let persisted = status == "persisted";
-                let request_id = *id;
-                self.general.update(cx, |pane, cx| {
-                    pane.accept_persist_result(request_id, persisted, cx);
-                });
-                self.markdown.update(cx, |pane, cx| {
-                    pane.accept_persist_result(request_id, persisted, cx);
-                });
+                let (pane, request_id) = save_result_target(*id);
+                if pane == "appearance" {
+                    self.appearance.update(cx, |pane, cx| {
+                        pane.accept_persist_result(request_id, persisted, cx);
+                    });
+                } else {
+                    self.general.update(cx, |pane, cx| {
+                        pane.accept_persist_result(request_id, persisted, cx);
+                    });
+                    self.markdown.update(cx, |pane, cx| {
+                        pane.accept_persist_result(request_id, persisted, cx);
+                    });
+                }
                 return None;
             }
             HostToGuest::SpellcheckerInfo {
@@ -94,6 +115,7 @@ impl HostView {
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.appearance.update(cx, |_pane, cx| cx.notify());
         self.editor.update(cx, |_pane, cx| cx.notify());
         self.markdown.update(cx, |_pane, cx| cx.notify());
         reply
@@ -105,6 +127,7 @@ impl Render for HostView {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
         let content: AnyElement = match self.session.active_pane() {
             "general" => self.general.clone().into_any_element(),
+            "appearance" => self.appearance.clone().into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
             "markdown" => self.markdown.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
@@ -137,6 +160,18 @@ fn placeholder(view: &HostView) -> impl IntoElement {
             "Theme",
             div().text_color(rgb(0xf4f4f5)).child(theme),
         ))
+}
+
+fn save_result_target(id: u64) -> (&'static str, u64) {
+    if id >= APPEARANCE_SAVE_ID_BASE {
+        ("appearance", id - APPEARANCE_SAVE_ID_BASE)
+    } else {
+        ("general", id)
+    }
+}
+
+fn publish_appearance_persist(id: u64, key: String, value: Value) {
+    publish_persist(id.saturating_add(APPEARANCE_SAVE_ID_BASE), key, value);
 }
 
 /// Stage 1 transport for a pane write. Native builds keep the value in the bridge only.
@@ -179,4 +214,18 @@ pub fn post_to_parent(reply: &GuestToHost) {
         return;
     };
     let _ = parent.post_message(&value, "*");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_results_stay_on_the_pane_that_asked() {
+        assert_eq!(save_result_target(1), ("general", 1));
+        assert_eq!(
+            save_result_target(APPEARANCE_SAVE_ID_BASE + 1),
+            ("appearance", 1)
+        );
+    }
 }
