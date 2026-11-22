@@ -74,6 +74,27 @@ const readSlices = (): SliceDef[] => {
   return parsed.slices
 }
 
+export interface PaneProbe {
+  visibleFrames: Array<{ paneReady: string | null; canvasWidth: number; canvasHeight: number }>
+  legacy: { width: number; height: number; textLength: number } | null
+}
+
+/** A visible wasm frame counts only after `PANE_CHANGED` and a sized canvas. */
+export const isPanePainted = (probe: PaneProbe): boolean => {
+  if (probe.visibleFrames.length > 0) {
+    return probe.visibleFrames.every(frame =>
+      frame.paneReady !== null &&
+      frame.paneReady.length > 0 &&
+      frame.canvasWidth > 0 &&
+      frame.canvasHeight > 0
+    )
+  }
+  return probe.legacy !== null &&
+    probe.legacy.width > 0 &&
+    probe.legacy.height > 0 &&
+    probe.legacy.textLength > 0
+}
+
 export const settingsCategoryForSlice = (slice: SliceDef): string | null => {
   if (slice.flag.startsWith('prefs.pane.')) return slice.flag.slice('prefs.pane.'.length)
   if (slice.flag === 'prefs.sidebar' || slice.flag === 'window.preferences') return 'general'
@@ -202,6 +223,39 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
       }
       shot = settings
       await shot.waitForLoadState('domcontentloaded')
+      const paintDeadline = Date.now() + 20000
+      let painted = false
+      while (Date.now() < paintDeadline) {
+        const probe = await shot.evaluate(() => {
+          const visibleFrames = [...document.querySelectorAll('iframe.gpui-pane-frame')].flatMap(node => {
+            const frame = node as HTMLIFrameElement
+            const box = frame.getBoundingClientRect()
+            if (box.width <= 2 || box.height <= 2) return []
+            const canvas = frame.contentDocument?.querySelector('canvas')
+            return [{
+              paneReady: frame.getAttribute('data-pane-ready'),
+              canvasWidth: canvas?.width ?? 0,
+              canvasHeight: canvas?.height ?? 0
+            }]
+          })
+          const legacyNode = document.querySelector('.pref-setting')
+          const legacyBox = legacyNode?.getBoundingClientRect()
+          const legacy = legacyBox && visibleFrames.length === 0
+            ? {
+              width: legacyBox.width,
+              height: legacyBox.height,
+              textLength: (legacyNode.textContent ?? '').trim().length
+            }
+            : null
+          return { visibleFrames, legacy }
+        })
+        if (isPanePainted(probe)) {
+          painted = true
+          break
+        }
+        await shot.waitForTimeout(100)
+      }
+      if (!painted) throw new Error(`pane did not paint for ${slice.id}`)
       paneSwitchLatencyMs = Date.now() - paneStarted
     }
     if (options.screenshot) {

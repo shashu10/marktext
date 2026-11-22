@@ -55,6 +55,8 @@ fn install_host_messages(host: Entity<HostView>, cx: &mut App) {
         let _ =
             window.add_event_listener_with_callback("message", listener.as_ref().unchecked_ref());
         listener.forget();
+        // The parent posts SET_PANE on iframe load, before this listener exists.
+        post_to_parent(&marktext_core::GuestToHost::Ready { pane: None });
     }
 
     cx.spawn(async move |cx| {

@@ -3,32 +3,39 @@
 //! once they own a real preferences screen.
 
 use gpui::{Context, IntoElement, Render, Window, div, prelude::*, rgb};
-use marktext_core::{GuestToHost, HostToGuest, PaneRouter};
+use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 
 pub struct HostView {
-    router: PaneRouter,
+    session: GuestSession,
 }
 
 impl HostView {
     pub fn new(initial_pane: impl Into<String>) -> Self {
         Self {
-            router: PaneRouter::new(initial_pane),
+            session: GuestSession::new(initial_pane),
         }
     }
 
     pub fn active_pane(&self) -> &str {
-        self.router.active()
+        self.session.active_pane()
     }
 
     pub fn apply(&mut self, message: &HostToGuest) -> Option<GuestToHost> {
-        self.router.handle(message)
+        self.session.apply(message)
     }
 }
 
 impl Render for HostView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.router.active().to_string();
+        let pane = self.session.active_pane().to_string();
+        let theme = self
+            .session
+            .bridge()
+            .get_preferences()
+            .text("theme")
+            .unwrap_or("")
+            .to_string();
         div()
             .font_family("Liberation Sans")
             .size_full()
@@ -39,6 +46,10 @@ impl Render for HostView {
             .child(setting_row(
                 "Active pane",
                 div().text_color(rgb(0xf4f4f5)).child(pane),
+            ))
+            .child(setting_row(
+                "Theme",
+                div().text_color(rgb(0xf4f4f5)).child(theme),
             ))
     }
 }
