@@ -6,7 +6,7 @@ Every Cursor Cloud Agent (or SDK-dispatched agent) executing a migration slice f
 
 ## Step 1 — Orient, Verify Prerequisites & Claim Slice
 
-1. Read `AGENTS.md`, `docs/migration/ARCHITECTURE.md`, `docs/migration/MIGRATION_PLAN.md`, and `docs/migration/STATUS.md`.
+1. Read `AGENTS.md`, `docs/migration/ARCHITECTURE.md`, `docs/migration/MIGRATION_PLAN.md`, `docs/migration/STATUS.md`, and `docs/migration/MEMORY.md`. Apply a memory entry only when it matches this slice.
 2. Check prerequisites for your target slice in `STATUS.md`:
    - If any prerequisite is not `verified`, **stop and report the blocker** rather than inventing ad-hoc scaffolding.
    - If the prompt asked for _"the next unmigrated slice"_ without naming an ID, pick the first `todo` row whose prerequisites are all `verified` **and** that has no open PR (`gh pr list --repo shashu10/marktext --label migration --state open`).
@@ -136,7 +136,8 @@ pnpm migration:progress --slice <slice-id>
    gh pr comment --repo shashu10/marktext --body "@shashu10 Slice \`<slice-id>\` is implemented, verified, and ready for human review. All automated checks and Before/After measurements are in the PR description."
    ```
    _(Note: When the Cloud Agent authenticates under `shashu10`, GitHub disallows adding `shashu10` via `--add-reviewer` on their own PR; tagging `@shashu10` in the PR body/comment + enforcing required CI status checks gates the merge. In enterprise production rollouts, Cloud Agents authenticate as a dedicated GitHub App bot so GitHub enforces `CODEOWNERS` human approval natively.)_
-5. **Never merge the PR.** Stop and hand off to the human reviewer + automated QA Verifier CI check.
+5. If a constraint took investigation and is not already in `docs/migration/MEMORY.md`, add it there. Follow the keep and drop rules at the top of that file. A fix that was right on the first attempt stays out.
+6. **Never merge the PR.** Stop and hand off to the human reviewer + automated QA Verifier CI check.
 
 ---
 
