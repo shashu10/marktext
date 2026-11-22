@@ -93,6 +93,17 @@ describe('GpuiPaneHost protocol', () => {
       key: 'treePathExcludePatterns',
       value: ['*.tmp']
     })
+    expect(frameMessageToCommand({
+      type: 'HOST_ACTION',
+      id: 2,
+      action: 'probe-pandoc',
+      payload: {}
+    })).toEqual({
+      type: 'host-action',
+      id: 2,
+      action: 'probe-pandoc',
+      payload: {}
+    })
     expect(frameMessageToCommand({ type: 'SCROLL_TO_HEADER', slug: 'intro' })).toEqual({
       type: 'scroll-to-header',
       slug: 'intro'

@@ -75,6 +75,66 @@ const persistPreference = async (id: number, key: string, value: unknown): Promi
   post({ type: 'PREFERENCE_RESULT', id, status })
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const runHostAction = async (id: number, action: string, payload: unknown): Promise<void> => {
+  const body = isRecord(payload) ? payload : {}
+  let status = 'failed'
+  let result: Record<string, unknown> = {}
+  try {
+    if (action === 'set-user-data' && typeof body.key === 'string') {
+      window.electron.ipcRenderer.send('mt::set-user-data', { [body.key]: body.value })
+      status = 'ok'
+      result = { [body.key]: body.value }
+    } else if (action === 'ask-image-folder') {
+      const path = typeof body.path === 'string' ? body.path : undefined
+      window.electron.ipcRenderer.send('mt::ask-for-modify-image-folder-path', path)
+      status = 'ok'
+      if (typeof path === 'string') result = { imageFolderPath: path }
+    } else if (action === 'open-path' && typeof body.path === 'string') {
+      await window.electron.shell.openPath(body.path)
+      status = 'ok'
+    } else if (action === 'open-external' && typeof body.url === 'string') {
+      await window.electron.shell.openExternal(body.url)
+      status = 'ok'
+    } else if (action === 'probe-pandoc') {
+      const info = await window.electron.ipcRenderer.invoke('mt::pandoc::command') as { command?: string | null }
+      status = 'ok'
+      result = { command: info?.command ?? '' }
+    } else if (action === 'probe-picgo') {
+      const detectedAt = new Date().toISOString()
+      const debug: string[] = [`Detection time: ${detectedAt}`, `Platform: ${window.process?.platform || 'unknown'}`]
+      if (!window.commandExists || typeof window.commandExists.exists !== 'function') {
+        throw new Error('Command detection bridge is unavailable')
+      }
+      const [nodeExists, npmExists, exists] = await Promise.all([
+        window.commandExists.exists('node'),
+        window.commandExists.exists('npm'),
+        window.commandExists.exists('picgo')
+      ])
+      debug.push(`Node.js detected: ${nodeExists}`, `npm detected: ${npmExists}`, `PicGo-Core detected: ${exists}`)
+      status = 'ok'
+      result = {
+        exists,
+        detectedAt,
+        debug: debug.join('\n'),
+        ...(exists ? { successAt: detectedAt } : {})
+      }
+    } else if (action === 'is-executable' && typeof body.path === 'string') {
+      const executable = await window.fileUtils.isExecutable(body.path)
+      status = 'ok'
+      result = { path: body.path, executable }
+    }
+  } catch (error) {
+    status = 'failed'
+    result = {
+      error: error instanceof Error ? (error.stack || error.message) : String(error)
+    }
+  }
+  post({ type: 'HOST_ACTION_RESULT', id, status, payload: result })
+}
+
 const sendSnapshot = (): void => {
   post({
     type: 'PREFERENCES',
@@ -102,6 +162,10 @@ const onWindowMessage = (event: MessageEvent): void => {
   }
   if (command.type === 'persist-preference') {
     void persistPreference(command.id, command.key, command.value)
+    return
+  }
+  if (command.type === 'host-action') {
+    void runHostAction(command.id, command.action, command.payload)
     return
   }
   if (command.type === 'scroll-to-header') {
