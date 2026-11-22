@@ -101,6 +101,27 @@ describe('GpuiPaneHost protocol', () => {
       type: 'toggle-reading-mode',
       readOnly: true
     })
+    expect(frameMessageToCommand({ type: 'REQUEST_KEYBINDINGS' })).toEqual({
+      type: 'request-keybindings'
+    })
+    expect(frameMessageToCommand({
+      type: 'SAVE_KEYBINDING',
+      id: 2,
+      commandId: 'file.save',
+      accelerator: 'Ctrl+S'
+    })).toEqual({
+      type: 'save-keybinding',
+      id: 2,
+      commandId: 'file.save',
+      accelerator: 'Ctrl+S'
+    })
+    expect(frameMessageToCommand({ type: 'RESET_ALL_KEYBINDINGS', id: 3 })).toEqual({
+      type: 'reset-all-keybindings',
+      id: 3
+    })
+    expect(frameMessageToCommand({ type: 'KEYBINDING_DEBUG_DUMP' })).toEqual({
+      type: 'keybinding-debug-dump'
+    })
     expect(frameMessageToCommand({ type: 'READY', pane: 'general' })).toBeNull()
     expect(isGuestReady({ type: 'READY', pane: null })).toBe(true)
     expect(paneChangedName({ type: 'PANE_CHANGED', pane: 'general' })).toBe('general')
