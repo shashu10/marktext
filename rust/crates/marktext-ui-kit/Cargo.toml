@@ -10,3 +10,4 @@ description = "GPUI controls shared by migrated MarkText panes."
 [dependencies]
 gpui.workspace = true
 gpui_elements.workspace = true
+gpui_components.workspace = true

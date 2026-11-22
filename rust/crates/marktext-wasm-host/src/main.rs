@@ -12,6 +12,8 @@ fn main() {
 
     gpui_platform::application().run(|cx| {
         load_fonts(cx);
+        // Styled controls read the kit theme. Without this, the first button panics.
+        marktext_ui_kit::init(cx);
         cx.bind_keys(default_bindings().as_keybindings(Some(DEFAULT_INPUT_CONTEXT)));
 
         let host = cx.new(|cx| HostView::new("general", cx));

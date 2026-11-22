@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_elements::editable_text::{EditableTextState, StringStorage, text_area, text_input};
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{UI_FONT, action_button, choice_button, select_control, toggle};
 use serde_json::{Value, json};
 
 use crate::model::{
@@ -21,7 +21,6 @@ pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
 const PAGE: u32 = 0xFFFFFF;
 const INK: u32 = 0x1C1C1F;
 const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
 const LINE: u32 = 0xD8D8DE;
 const SAVE_FAILED: &str = "Could not save this setting. The previous value was kept.";
 
@@ -295,7 +294,10 @@ fn theme_section(
                 .w(px(280.))
                 .min_h(px(32.))
                 .px_2()
-                .bg(rgb(CHIP))
+                .rounded_md()
+                .border_1()
+                .border_color(rgb(LINE))
+                .bg(rgb(PAGE))
                 .text_color(rgb(INK)),
         );
     if model.follow_system_theme {
@@ -339,22 +341,17 @@ fn mode_chips(view: &Entity<AppearancePane>, selected: ThemeMode) -> impl IntoEl
     for (mode, label) in modes {
         let view = view.clone();
         let active = mode == selected;
-        row = row.child(
-            div()
-                .id(SharedString::from(format!("setting-theme-filter-{label}")))
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if active { 0x4C9AFF } else { CHIP }))
-                .cursor_pointer()
-                .child(label)
-                .on_click(move |_event, _window, app| {
-                    view.update(app, |pane, cx| {
-                        pane.theme_mode = mode;
-                        cx.notify();
-                    });
-                }),
-        );
+        row = row.child(choice_button(
+            SharedString::from(format!("setting-theme-filter-{label}")),
+            label,
+            active,
+            move |_event, _window, app| {
+                view.update(app, |pane, cx| {
+                    pane.theme_mode = mode;
+                    cx.notify();
+                });
+            },
+        ));
     }
     row
 }
@@ -382,32 +379,25 @@ fn theme_list(
         let active = name == selected;
         let swatch = theme_swatch(name);
         chips = chips.child(
-            div()
-                .id(SharedString::from(format!("setting-{key}-{name}")))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if active { 0x4C9AFF } else { CHIP }))
-                .text_color(rgb(if active { PAGE } else { INK }))
-                .cursor_pointer()
-                .child(
-                    div()
-                        .size(px(14.))
-                        .rounded_sm()
-                        .bg(rgb(swatch))
-                        .border_1()
-                        .border_color(rgb(LINE)),
-                )
-                .child(theme_label(name))
-                .on_click(move |_event, _window, app| {
+            choice_button(
+                SharedString::from(format!("setting-{key}-{name}")),
+                theme_label(name),
+                active,
+                move |_event, _window, app| {
                     let chosen = name.to_string();
                     view.update(app, |pane, cx| {
                         pane.write(key, Value::String(chosen), cx);
                     });
-                }),
+                },
+            )
+            .child(
+                div()
+                    .size(px(14.))
+                    .rounded_sm()
+                    .bg(rgb(swatch))
+                    .border_1()
+                    .border_color(rgb(LINE)),
+            ),
         );
     }
     div()
@@ -439,7 +429,10 @@ fn css_editor(
                 .min_h(px(120.))
                 .px_2()
                 .py_2()
-                .bg(rgb(CHIP))
+                .rounded_md()
+                .border_1()
+                .border_color(rgb(LINE))
+                .bg(rgb(PAGE))
                 .text_color(rgb(INK)),
         )
         .child(save_button(
@@ -674,7 +667,10 @@ fn font_field(field: FontField<'_>) -> impl IntoElement {
                         .w(px(280.))
                         .min_h(px(32.))
                         .px_2()
-                        .bg(rgb(CHIP))
+                        .rounded_md()
+                        .border_1()
+                        .border_color(rgb(LINE))
+                        .bg(rgb(PAGE))
                         .text_color(rgb(INK)),
                 )
                 .child(save_button(
@@ -768,18 +764,14 @@ fn step_button(
         max,
     } = change;
     let view = view.clone();
-    div()
-        .id(SharedString::from(id))
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(CHIP))
-        .cursor_pointer()
-        .child(label)
-        .on_click(move |_event, _window, app| {
+    action_button(
+        SharedString::from(id),
+        label,
+        move |_event, _window, app| {
             let next = step_by(value, delta, step, min, max);
             write_back(&view, key, json!(next), app);
-        })
+        },
+    )
 }
 
 fn bool_row(
@@ -795,20 +787,11 @@ fn bool_row(
 }
 
 fn save_button(
-    id: impl Into<SharedString>,
+    id: impl Into<gpui::ElementId>,
     saving: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(id.into())
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(0x4C9AFF))
-        .text_color(rgb(PAGE))
-        .cursor_pointer()
-        .child(if saving { "Saving…" } else { "Save" })
-        .on_click(on_click)
+    action_button(id, if saving { "Saving…" } else { "Save" }, on_click)
 }
 
 fn error_line(message: Option<&'static str>) -> impl IntoElement {
@@ -886,6 +869,7 @@ mod tests {
     #[test]
     fn saved_stylesheet_fills_the_field_without_replacing_an_edit() {
         let mut app = TestApp::new();
+        app.update(marktext_ui_kit::init);
         let bridge = Arc::new(MemoryHostBridge::with_defaults());
         bridge.set_preference("customCss".to_string(), json!("h1 { color: red }"));
         bridge.set_preference("editorFontFamily".to_string(), json!("Iosevka"));
@@ -950,6 +934,7 @@ mod tests {
     #[test]
     fn a_later_snapshot_fills_a_clean_stylesheet_field() {
         let mut app = TestApp::new();
+        app.update(marktext_ui_kit::init);
         let bridge = Arc::new(MemoryHostBridge::with_defaults());
         let bridge_for_view = Arc::clone(&bridge);
         let mut window = app.open_window(move |_window, _cx| {
