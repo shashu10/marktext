@@ -93,6 +93,10 @@ describe('GpuiPaneHost protocol', () => {
       key: 'treePathExcludePatterns',
       value: ['*.tmp']
     })
+    expect(frameMessageToCommand({ type: 'CHOOSE_DIRECTORY', id: 7 })).toEqual({
+      type: 'choose-directory',
+      id: 7
+    })
     expect(frameMessageToCommand({ type: 'SCROLL_TO_HEADER', slug: 'intro' })).toEqual({
       type: 'scroll-to-header',
       slug: 'intro'

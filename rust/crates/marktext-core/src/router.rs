@@ -33,7 +33,8 @@ impl PaneRouter {
             // here would report success without storing anything.
             HostToGuest::Preferences { .. }
             | HostToGuest::PreferencePatch { .. }
-            | HostToGuest::PreferenceResult { .. } => None,
+            | HostToGuest::PreferenceResult { .. }
+            | HostToGuest::DirectoryChosen { .. } => None,
         }
     }
 }

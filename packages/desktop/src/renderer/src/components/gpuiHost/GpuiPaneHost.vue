@@ -67,12 +67,26 @@ const post = (message: Record<string, unknown>): void => {
 const persistPreference = async (id: number, key: string, value: unknown): Promise<void> => {
   let status: 'persisted' | 'failed' = 'failed'
   try {
-    const result = await window.electron.ipcRenderer.invoke('mt::preferences::update', { [key]: value }) as { status?: string }
+    // An empty key carries a multi-key patch object (startup folder selection).
+    const patch = key === '' && value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : { [key]: value }
+    const result = await window.electron.ipcRenderer.invoke('mt::preferences::update', patch) as { status?: string }
     if (result.status === 'persisted') status = 'persisted'
   } catch {
     status = 'failed'
   }
   post({ type: 'PREFERENCE_RESULT', id, status })
+}
+
+const chooseDirectory = async (id: number): Promise<void> => {
+  let path: string | null
+  try {
+    path = await window.electron.ipcRenderer.invoke('mt::preferences::choose-directory') as string | null
+  } catch {
+    path = null
+  }
+  post({ type: 'DIRECTORY_CHOSEN', id, path })
 }
 
 const sendSnapshot = (): void => {
@@ -102,6 +116,10 @@ const onWindowMessage = (event: MessageEvent): void => {
   }
   if (command.type === 'persist-preference') {
     void persistPreference(command.id, command.key, command.value)
+    return
+  }
+  if (command.type === 'choose-directory') {
+    void chooseDirectory(command.id)
     return
   }
   if (command.type === 'scroll-to-header') {
