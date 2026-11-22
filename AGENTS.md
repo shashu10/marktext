@@ -299,3 +299,44 @@ See `packages/website/content/docs/dev/IPC.md` for conventions and examples.
 - Run `pnpm run lint` before submitting.
 - All PRs must pass CI before merge.
 - See `.github/CONTRIBUTING.md` for the full contributing guide.
+
+## Cursor Cloud Specific Instructions
+
+This repository ships a custom Cloud Agent environment in `.cursor/environment.json` (Ubuntu 24.04 with Node 22, pnpm 10, `node-gyp`, Xvfb + Electron libs, Playwright Chromium, Rust stable + `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.130`, and Linux GPUI/Vulkan/X11/Wayland headers).
+
+### Rust / GPUI Incremental Migration Context (Read Before Starting Migration Work)
+
+This fork is executing a **Strangler-Fig Electron → Rust (GPUI)** migration while preserving full legacy MarkText functionality. Before implementing or reviewing any migration slice, read:
+
+- `docs/migration/ARCHITECTURE.md` — measured subsystem map (`~104k LOC`), feature inventory, IPC/Pinia boundaries, and the Outline-click → Editor-scroll reference trace.
+- `docs/migration/MIGRATION_PLAN.md` — the Two-Stage **`gpui_web` (WASM in persistent `<iframe>`) → Native OS GPUI** strategy, `HostBridge` trait contract, `gpui_web` constraints, dependency DAG, and governance rules.
+- `docs/migration/STATUS.md` — live slice tracker (Slice ID, feature flag key, prerequisites, target crate, and status). Check your slice's prerequisites and update its status row in your PR.
+- `docs/migration/RUNBOOK.md` — **mandatory step-by-step execution protocol** for running a migration slice end-to-end (Before baseline → early Draft PR → implementation → After benchmark & screenshots → tag `@shashu10`).
+
+**Mandatory Cloud Agent Slice Sequence (See `docs/migration/RUNBOOK.md` for Full Template):**
+
+1. **Check prereqs & claim:** Verify slice prerequisites in `STATUS.md` and check open `migration` PRs (`gh pr list --label migration`) to avoid parallel collisions; branch off `develop` and mark `in-progress`.
+2. **Capture "Before" baseline FIRST:** Build untouched legacy app and record startup/pane latency, Main+Renderer RSS memory, 5s idle CPU %, bundle size, and a Before screenshot in `/tmp/` (never commit PNGs to git).
+3. **Open a Draft PR early:** Push the `STATUS.md` claim and open a Draft PR (`--draft --base develop --label migration`) containing the **Before baseline table** and **Tentative Implementation Plan** so measurements survive context compaction and lock the slice.
+4. **Implement behind feature flag:** Build the Rust GPUI crate against `HostBridge` + `gpui-ce` (`default-features = false`), keep `prod` on `legacy`, and add Rust + IPC parity tests.
+5. **Verify & capture "After" metrics:** Run `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `cargo test`, `cargo clippy`, `wasm32` build, repeat the exact same measurements + After screenshot, and verify `flag=legacy` rollback.
+6. **Finalize PR & request human review:** Fill in **Planned vs. Actually Implemented**, **Before vs. After scorecard** (honestly distinguishing Stage 1 WASM overhead guardrails vs. Stage 2 native ROI), and screenshot artifact links; run `gh pr ready`, tag **`@shashu10`**, and **never self-merge**.
+
+**Key Migration Invariants for All Agents:**
+
+- **Write GPUI views once:** Target `gpui-ce` (`default-features = false`) + `gpui_ce_platform` (`default-features = false`) so every view compiles cleanly to both `wasm32-unknown-unknown` (Stage 1) and native OS GPUI (Stage 2) with no platform `#[cfg]` inside UI views.
+- **Route all host I/O through `HostBridge`:** Never bypass the shared preference/IPC bridge or mutate disconnected local state; preference writes must sync to Electron Main and broadcast to open Editor windows.
+- **Gate every slice behind a feature flag** (`legacy` | `rust-wasm` | `gpui-native` | `shadow`) and preserve parity in both WYSIWYG and Source Code modes where applicable.
+
+### Cloud VM Verification & PR Rules
+
+- **Headless Electron E2E & visual QA:** Always wrap Electron/Playwright commands in `xvfb-run --auto-servernum`, e.g.:
+  - `xvfb-run --auto-servernum pnpm test:e2e`
+  - `xvfb-run --auto-servernum pnpm -C packages/desktop exec playwright test test/e2e/launch.spec.ts`
+- **Native rebuilds:** Keep `USE_ELECTRON_CLANG=0` set if running `pnpm run rebuild-native` or `pnpm tsx scripts/postinstall.ts`.
+- **Rust / GPUI WASM builds:** Compile Stage 1 web panes with `cargo build --target wasm32-unknown-unknown --release` and emit JS/WASM bindings via `wasm-bindgen --target web`.
+- **PR & Governance rules for migration slices:**
+  - Always open PRs targeting **`develop`** on this fork (never push directly to `develop` or auto-merge).
+  - Tag migration PRs with the `migration` label.
+  - Run `pnpm run lint`, `pnpm run typecheck`, `pnpm test:unit`, and relevant Rust/Playwright checks before finishing.
+  - Keep screenshot artifacts outside the tracked git tree and attach/upload them as PR evidence.

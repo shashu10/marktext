@@ -8,7 +8,11 @@ packages/*/dist
 .eslintcache
 *.log*
 .trae/
-.cursor/
+.cursor/*
+!.cursor/environment.json
+!.cursor/Dockerfile
+!.cursor/install.sh
+!.cursor/rules/
 doc/
 # Ignore temp artifacts
 temp/
