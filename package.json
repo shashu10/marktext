@@ -40,6 +40,8 @@
     "validate-licenses": "tsx scripts/validateLicenses.ts",
     "migration:progress": "node --no-warnings scripts/migration-progress.ts",
     "migration:measure": "node --no-warnings scripts/migration-measure.ts",
+    "migration:qa-monitor": "node --no-warnings scripts/qa-monitor/run-qa-monitor.ts",
+    "migration:qa-test": "node --no-warnings --test scripts/qa-monitor/qa-monitor.test.ts",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -55,6 +57,7 @@
   },
   "devDependencies": {
     "@babel/eslint-parser": "^8.0.7",
+    "@cursor/sdk": "^1.4.2",
     "@eslint/js": "^10.0.1",
     "electron": "~45.0.0",
     "eslint": "^10.13.0",
