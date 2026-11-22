@@ -25,7 +25,7 @@
 | `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review` |
 | `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `in-review` |
 | `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `in-review` |
-| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `todo`      |
+| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `in-review` |
 | `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-review` |
 | `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo`      |
 | `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `todo`      |

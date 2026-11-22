@@ -18,6 +18,9 @@ pub enum HostToGuest {
     /// Answer to `PERSIST_PREFERENCE`. `status` is `persisted` or `failed`.
     #[serde(rename = "PREFERENCE_RESULT")]
     PreferenceResult { id: u64, status: String },
+    /// Answer to `CHOOSE_DIRECTORY`. `path` is null when the dialog was cancelled.
+    #[serde(rename = "DIRECTORY_CHOSEN")]
+    DirectoryChosen { id: u64, path: Option<String> },
     /// Spellchecker dictionaries and personal words for the Editor pane.
     #[serde(rename = "SPELLCHECKER_INFO")]
     SpellcheckerInfo {
@@ -46,6 +49,9 @@ pub enum GuestToHost {
     /// Ask Electron to run `mt::preferences::update` and answer with `PREFERENCE_RESULT`.
     #[serde(rename = "PERSIST_PREFERENCE")]
     PersistPreference { id: u64, key: String, value: Value },
+    /// Ask Electron to open a directory picker and answer with `DIRECTORY_CHOSEN`.
+    #[serde(rename = "CHOOSE_DIRECTORY")]
+    ChooseDirectory { id: u64 },
     #[serde(rename = "SCROLL_TO_HEADER")]
     ScrollToHeader { slug: String },
     #[serde(rename = "TOGGLE_READING_MODE")]

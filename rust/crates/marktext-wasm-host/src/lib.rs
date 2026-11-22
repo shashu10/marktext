@@ -10,6 +10,7 @@ use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 use mt_pref_appearance::AppearancePane;
 use mt_pref_editor::EditorPane;
+use mt_pref_files::FilesPane;
 use mt_pref_general::GeneralPane;
 use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
@@ -23,6 +24,7 @@ pub struct HostView {
     general: gpui::Entity<GeneralPane>,
     appearance: gpui::Entity<AppearancePane>,
     editor: gpui::Entity<EditorPane>,
+    files: gpui::Entity<FilesPane>,
     markdown: gpui::Entity<MarkdownPane>,
 }
 
@@ -51,6 +53,14 @@ impl HostView {
                 Rc::new(publish_word_removal),
             )
         });
+        let files = cx.new(|_cx| {
+            FilesPane::new(
+                Arc::clone(&bridge),
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+                Rc::new(publish_choose_directory),
+            )
+        });
         let markdown = cx.new(|_cx| {
             MarkdownPane::new(
                 bridge,
@@ -63,6 +73,7 @@ impl HostView {
             general,
             appearance,
             editor,
+            files,
             markdown,
         }
     }
@@ -84,10 +95,21 @@ impl HostView {
                     self.general.update(cx, |pane, cx| {
                         pane.accept_persist_result(request_id, persisted, cx);
                     });
+                    self.files.update(cx, |pane, cx| {
+                        pane.accept_persist_result(request_id, persisted, cx);
+                    });
                     self.markdown.update(cx, |pane, cx| {
                         pane.accept_persist_result(request_id, persisted, cx);
                     });
                 }
+                return None;
+            }
+            HostToGuest::DirectoryChosen { id, path } => {
+                let request_id = *id;
+                let chosen = path.clone();
+                self.files.update(cx, |pane, cx| {
+                    pane.accept_directory(request_id, chosen, cx);
+                });
                 return None;
             }
             HostToGuest::SpellcheckerInfo {
@@ -117,6 +139,7 @@ impl HostView {
         self.general.update(cx, |_pane, cx| cx.notify());
         self.appearance.update(cx, |_pane, cx| cx.notify());
         self.editor.update(cx, |_pane, cx| cx.notify());
+        self.files.update(cx, |_pane, cx| cx.notify());
         self.markdown.update(cx, |_pane, cx| cx.notify());
         reply
     }
@@ -129,6 +152,7 @@ impl Render for HostView {
             "general" => self.general.clone().into_any_element(),
             "appearance" => self.appearance.clone().into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
+            "files" => self.files.clone().into_any_element(),
             "markdown" => self.markdown.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
@@ -190,6 +214,15 @@ pub fn publish_preference(key: String, value: Value) {
     #[cfg(not(target_family = "wasm"))]
     {
         let _ = (key, value);
+    }
+}
+
+pub fn publish_choose_directory(id: u64) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::ChooseDirectory { id });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = id;
     }
 }
 
