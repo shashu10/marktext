@@ -202,7 +202,7 @@ pub fn record_keystroke(keystroke: &Keystroke, is_mac: bool) -> Option<(String, 
     }
     let mut parts = Vec::new();
     if keystroke.modifiers.control {
-        parts.push(if is_mac { "ctrl" } else { "ctrl" });
+        parts.push("ctrl");
     }
     if keystroke.modifiers.alt {
         parts.push("alt");

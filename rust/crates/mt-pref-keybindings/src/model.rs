@@ -132,7 +132,7 @@ impl KeybindingsModel {
     pub fn replace_commands(&mut self, commands: &[KeybindingEntry]) {
         self.commands = commands.iter().map(KeybindingCommand::from_entry).collect();
         self.commands
-            .sort_by(|a, b| a.description.to_lowercase().cmp(&b.description.to_lowercase()));
+            .sort_by_key(|command| command.description.to_lowercase());
     }
 
     pub fn has_custom_bindings(&self) -> bool {
@@ -231,6 +231,12 @@ pub enum PersistDecision {
 pub struct PersistGate {
     next_id: u64,
     pending: Option<PendingKeybindingSave>,
+}
+
+impl Default for PersistGate {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PersistGate {
