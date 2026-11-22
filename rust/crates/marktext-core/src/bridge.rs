@@ -82,12 +82,12 @@ impl HostBridge for MemoryHostBridge {
     }
 
     fn set_preference(&self, key: String, value: Value) {
-        let Some(patch) = self
+        let patch = self
             .snapshot
             .lock()
             .expect("preference lock")
-            .insert_known(key, value)
-        else {
+            .insert_known(key, value);
+        let Some(patch) = patch else {
             return;
         };
         self.notify(patch);

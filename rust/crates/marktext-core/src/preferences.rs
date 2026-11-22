@@ -69,7 +69,8 @@ impl PreferencesSnapshot {
     pub fn apply_known(&mut self, changes: &BTreeMap<String, Value>) -> PreferencesPatch {
         let mut patch = BTreeMap::new();
         for (key, value) in changes {
-            if let Some(one) = self.insert_known(key.clone(), value.clone()) {
+            let applied = self.insert_known(key.clone(), value.clone());
+            if let Some(one) = applied {
                 patch.extend(one.changes);
             }
         }
