@@ -1,6 +1,6 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
-//! this view answers with `GuestToHost`. The General pane is mounted here;
-//! other panes still use the placeholder until their crates land.
+//! this view answers with `GuestToHost`. Migrated preference panes are mounted
+//! here; other panes still use the placeholder until their crates land.
 
 use std::rc::Rc;
 
@@ -8,11 +8,13 @@ use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rg
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 use mt_pref_general::GeneralPane;
+use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    markdown: gpui::Entity<MarkdownPane>,
 }
 
 impl HostView {
@@ -21,12 +23,23 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
+                bridge.clone(),
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+            )
+        });
+        let markdown = cx.new(|_cx| {
+            MarkdownPane::new(
                 bridge,
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
         });
-        Self { session, general }
+        Self {
+            session,
+            general,
+            markdown,
+        }
     }
 
     pub fn active_pane(&self) -> &str {
@@ -40,10 +53,14 @@ impl HostView {
             self.general.update(cx, |pane, cx| {
                 pane.accept_persist_result(request_id, persisted, cx);
             });
+            self.markdown.update(cx, |pane, cx| {
+                pane.accept_persist_result(request_id, persisted, cx);
+            });
             return None;
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.markdown.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -51,10 +68,10 @@ impl HostView {
 impl Render for HostView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
-        let content: AnyElement = if self.session.active_pane() == "general" {
-            self.general.clone().into_any_element()
-        } else {
-            placeholder(self).into_any_element()
+        let content: AnyElement = match self.session.active_pane() {
+            "general" => self.general.clone().into_any_element(),
+            "markdown" => self.markdown.clone().into_any_element(),
+            _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)
     }

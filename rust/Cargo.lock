@@ -3288,6 +3288,7 @@ dependencies = [
  "marktext-core",
  "marktext-ui-kit",
  "mt-pref-general",
+ "mt-pref-markdown",
  "serde-wasm-bindgen",
  "serde_json",
  "wasm-bindgen",
@@ -3393,6 +3394,17 @@ dependencies = [
 
 [[package]]
 name = "mt-pref-general"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "marktext-core",
+ "marktext-ui-kit",
+ "serde_json",
+]
+
+[[package]]
+name = "mt-pref-markdown"
 version = "0.1.0"
 dependencies = [
  "gpui-ce",
