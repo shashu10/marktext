@@ -207,6 +207,73 @@ pub fn string_array(values: &[String]) -> Value {
     Value::Array(values.iter().cloned().map(Value::String).collect())
 }
 
+/// One exclusion edit waiting for `mt::preferences::update` to answer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PendingPersist {
+    pub id: u64,
+    pub key: String,
+    pub value: Value,
+    pub clear_draft: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PersistDecision {
+    Ignored,
+    Failed,
+    Applied(PendingPersist),
+}
+
+/// At most one exclusion write is in flight. The draft stays until a `persisted` result.
+#[derive(Debug)]
+pub struct PersistGate {
+    next_id: u64,
+    pending: Option<PendingPersist>,
+    pub save_error: bool,
+}
+
+impl PersistGate {
+    pub fn new() -> Self {
+        Self {
+            next_id: 0,
+            pending: None,
+            save_error: false,
+        }
+    }
+
+    /// Returns the request id when the edit was accepted. A second edit waits.
+    pub fn request(&mut self, key: String, value: Value, clear_draft: bool) -> Option<u64> {
+        if self.pending.is_some() {
+            return None;
+        }
+        self.next_id += 1;
+        let id = self.next_id;
+        self.pending = Some(PendingPersist {
+            id,
+            key,
+            value,
+            clear_draft,
+        });
+        self.save_error = false;
+        Some(id)
+    }
+
+    pub fn finish(&mut self, id: u64, persisted: bool) -> PersistDecision {
+        let Some(pending) = self.pending.take() else {
+            return PersistDecision::Ignored;
+        };
+        if pending.id != id {
+            self.pending = Some(pending);
+            return PersistDecision::Ignored;
+        }
+        if !persisted {
+            self.save_error = true;
+            return PersistDecision::Failed;
+        }
+        self.save_error = false;
+        PersistDecision::Applied(pending)
+    }
+}
+
 /// Same rule as `general/pandoc.ts`: an unanswered probe disables nothing,
 /// a missing binary disables the switch unless it is already on.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -309,5 +376,41 @@ mod tests {
         let found = pandoc_switch_state(Some("/usr/bin/pandoc"), false);
         assert_eq!(found.path, "/usr/bin/pandoc");
         assert!(!found.disabled);
+    }
+
+    #[test]
+    fn exclusion_draft_clears_only_after_a_persisted_result() {
+        let mut gate = PersistGate::new();
+        let id = gate
+            .request(
+                "treePathExcludePatterns".to_string(),
+                json!(["*.tmp"]),
+                true,
+            )
+            .expect("first edit is accepted");
+        assert!(
+            gate.request("treePathExcludePatterns".to_string(), json!([]), false)
+                .is_none()
+        );
+        assert_eq!(gate.finish(id + 1, true), PersistDecision::Ignored);
+        assert_eq!(gate.finish(id, false), PersistDecision::Failed);
+        assert!(gate.save_error);
+
+        let id = gate
+            .request(
+                "treePathExcludePatterns".to_string(),
+                json!(["*.tmp"]),
+                true,
+            )
+            .expect("the failed edit no longer blocks");
+        assert!(!gate.save_error);
+        match gate.finish(id, true) {
+            PersistDecision::Applied(pending) => {
+                assert!(pending.clear_draft);
+                assert_eq!(pending.value, json!(["*.tmp"]));
+            }
+            other => panic!("expected the saved list, got {other:?}"),
+        }
+        assert!(!gate.save_error);
     }
 }

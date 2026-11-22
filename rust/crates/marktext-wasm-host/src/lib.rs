@@ -19,7 +19,13 @@ impl HostView {
     pub fn new(initial_pane: impl Into<String>, cx: &mut Context<Self>) -> Self {
         let session = GuestSession::new(initial_pane);
         let bridge = session.bridge_handle();
-        let general = cx.new(|_cx| GeneralPane::new(bridge, Rc::new(publish_preference)));
+        let general = cx.new(|_cx| {
+            GeneralPane::new(
+                bridge,
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+            )
+        });
         Self { session, general }
     }
 
@@ -28,6 +34,14 @@ impl HostView {
     }
 
     pub fn apply(&mut self, message: &HostToGuest, cx: &mut Context<Self>) -> Option<GuestToHost> {
+        if let HostToGuest::PreferenceResult { id, status } = message {
+            let persisted = status == "persisted";
+            let request_id = *id;
+            self.general.update(cx, |pane, cx| {
+                pane.accept_persist_result(request_id, persisted, cx);
+            });
+            return None;
+        }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
         reply
@@ -73,6 +87,15 @@ fn placeholder(view: &HostView) -> impl IntoElement {
 }
 
 /// Stage 1 transport for a pane write. Native builds keep the value in the bridge only.
+pub fn publish_persist(id: u64, key: String, value: Value) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::PersistPreference { id, key, value });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = (id, key, value);
+    }
+}
+
 pub fn publish_preference(key: String, value: Value) {
     #[cfg(target_family = "wasm")]
     post_to_parent(&GuestToHost::SetPreference { key, value });

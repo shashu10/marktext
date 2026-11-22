@@ -31,7 +31,9 @@ impl PaneRouter {
             }
             // Preference payloads belong to `GuestSession`. Acknowledging them
             // here would report success without storing anything.
-            HostToGuest::Preferences { .. } | HostToGuest::PreferencePatch { .. } => None,
+            HostToGuest::Preferences { .. }
+            | HostToGuest::PreferencePatch { .. }
+            | HostToGuest::PreferenceResult { .. } => None,
         }
     }
 }

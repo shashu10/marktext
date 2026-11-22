@@ -5,11 +5,13 @@ export type GuestMessage =
   | { type: 'PANE_CHANGED'; pane: string }
   | { type: 'PREFERENCES_APPLIED' }
   | { type: 'SET_PREFERENCE'; key: string; value: unknown }
+  | { type: 'PERSIST_PREFERENCE'; id: number; key: string; value: unknown }
   | { type: 'SCROLL_TO_HEADER'; slug: string }
   | { type: 'TOGGLE_READING_MODE'; readOnly: boolean }
 
 export type HostCommand =
   | { type: 'set-preference'; key: string; value: unknown }
+  | { type: 'persist-preference'; id: number; key: string; value: unknown }
   | { type: 'scroll-to-header'; slug: string }
   | { type: 'toggle-reading-mode'; readOnly: boolean }
 
@@ -54,6 +56,13 @@ export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   if (message.type === 'SET_PREFERENCE' && typeof message.key === 'string') {
     return { type: 'set-preference', key: message.key, value: message.value }
   }
+  if (
+    message.type === 'PERSIST_PREFERENCE' &&
+    typeof message.id === 'number' &&
+    typeof message.key === 'string'
+  ) {
+    return { type: 'persist-preference', id: message.id, key: message.key, value: message.value }
+  }
   if (message.type === 'SCROLL_TO_HEADER' && typeof message.slug === 'string') {
     return { type: 'scroll-to-header', slug: message.slug }
   }
@@ -69,6 +78,7 @@ export const isGuestMessage = (message: unknown): message is GuestMessage =>
     message.type === 'PANE_CHANGED' ||
     message.type === 'PREFERENCES_APPLIED' ||
     message.type === 'SET_PREFERENCE' ||
+    message.type === 'PERSIST_PREFERENCE' ||
     message.type === 'SCROLL_TO_HEADER' ||
     message.type === 'TOGGLE_READING_MODE'
   )

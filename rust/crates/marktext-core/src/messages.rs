@@ -15,6 +15,9 @@ pub enum HostToGuest {
     Preferences { snapshot: BTreeMap<String, Value> },
     #[serde(rename = "PREFERENCE_PATCH")]
     PreferencePatch { changes: BTreeMap<String, Value> },
+    /// Answer to `PERSIST_PREFERENCE`. `status` is `persisted` or `failed`.
+    #[serde(rename = "PREFERENCE_RESULT")]
+    PreferenceResult { id: u64, status: String },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -29,6 +32,9 @@ pub enum GuestToHost {
     PreferencesApplied,
     #[serde(rename = "SET_PREFERENCE")]
     SetPreference { key: String, value: Value },
+    /// Ask Electron to run `mt::preferences::update` and answer with `PREFERENCE_RESULT`.
+    #[serde(rename = "PERSIST_PREFERENCE")]
+    PersistPreference { id: u64, key: String, value: Value },
     #[serde(rename = "SCROLL_TO_HEADER")]
     ScrollToHeader { slug: String },
     #[serde(rename = "TOGGLE_READING_MODE")]
