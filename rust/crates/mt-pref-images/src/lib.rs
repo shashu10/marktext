@@ -9,8 +9,8 @@ mod model;
 mod view;
 
 pub use model::{
-    Choice, DetectionState, ImagesModel, PandocSwitch, PersistDecision, PersistGate,
-    UserDataKeys, draft_still_matches, extract_user_data, folder_path_valid,
-    pandoc_switch_state, relative_directory_name_valid,
+    Choice, DetectionState, ImagesModel, PandocSwitch, PersistDecision, PersistGate, UserDataKeys,
+    draft_still_matches, extract_user_data, folder_path_valid, pandoc_switch_state,
+    relative_directory_name_valid,
 };
 pub use view::{HostActionPublisher, ImagesPane, PersistPublisher, PreferencePublisher};

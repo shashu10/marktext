@@ -24,9 +24,7 @@ pub fn accelerator_label(accelerator: &str, is_mac: bool) -> String {
             }
             "control" | "ctrl" => modifiers.push("Ctrl".to_string()),
             "shift" => modifiers.push("Shift".to_string()),
-            "option" | "alt" => {
-                modifiers.push(if is_mac { "Option" } else { "Alt" }.to_string())
-            }
+            "option" | "alt" => modifiers.push(if is_mac { "Option" } else { "Alt" }.to_string()),
             "plus" => keys.push("+".to_string()),
             other => {
                 if other.len() == 1 {
@@ -46,11 +44,7 @@ pub fn accelerator_label(accelerator: &str, is_mac: bool) -> String {
     modifiers.dedup();
     let mut out = modifiers;
     out.extend(keys);
-    if is_mac {
-        out.join("")
-    } else {
-        out.join("+")
-    }
+    if is_mac { out.join("") } else { out.join("+") }
 }
 
 /// Same rule as the legacy configurator's fallback equality path.
@@ -171,16 +165,20 @@ pub fn is_valid_accelerator(accelerator: &str, is_mac: bool) -> bool {
                 }
                 seen_key = true;
             }
-            other if other.starts_with('f')
-                && other.len() <= 3
-                && other[1..].chars().all(|c| c.is_ascii_digit()) =>
+            other
+                if other.starts_with('f')
+                    && other.len() <= 3
+                    && other[1..].chars().all(|c| c.is_ascii_digit()) =>
             {
                 if seen_key {
                     return false;
                 }
                 seen_key = true;
             }
-            other if other.starts_with("num") && other.len() == 4 && other.as_bytes()[3].is_ascii_digit() =>
+            other
+                if other.starts_with("num")
+                    && other.len() == 4
+                    && other.as_bytes()[3].is_ascii_digit() =>
             {
                 if seen_key {
                     return false;
@@ -257,7 +255,10 @@ mod tests {
     #[test]
     fn labels_follow_platform_words() {
         assert_eq!(accelerator_label("Ctrl+S", false), "Ctrl+S");
-        assert_eq!(accelerator_label("CmdOrCtrl+Shift+S", false), "Ctrl+Shift+S");
+        assert_eq!(
+            accelerator_label("CmdOrCtrl+Shift+S", false),
+            "Ctrl+Shift+S"
+        );
         assert_eq!(accelerator_label("", false), "");
     }
 

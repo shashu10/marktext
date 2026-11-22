@@ -4,10 +4,13 @@ use std::sync::Arc;
 
 use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px, rgb,
+    prelude::*, px,
 };
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{
+    UI_FONT, action_button, button_disabled, pref_error, pref_field, pref_page, pref_section,
+    select_control, toggle,
+};
 use serde_json::Value;
 
 use crate::model::{
@@ -23,12 +26,6 @@ pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
 
 /// Opens the Electron directory dialog. The host answers with `DIRECTORY_CHOSEN`.
 pub type ChooseDirectoryPublisher = Rc<dyn Fn(u64)>;
-
-const PAGE: u32 = 0xFFFFFF;
-const INK: u32 = 0x1C1C1F;
-const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
-const ACCENT: u32 = 0x4C9AFF;
 
 pub struct FilesPane {
     bridge: Arc<MemoryHostBridge>,
@@ -113,18 +110,7 @@ impl Render for FilesPane {
         let saving = self.gate.is_busy() || self.choosing;
         let view = cx.entity();
 
-        div()
-            .id("files-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Files & saving"))
+        pref_page("files-pane", "Files & saving", cx)
             .child(section(
                 "Auto Save",
                 div()
@@ -144,7 +130,7 @@ impl Render for FilesPane {
             ))
             .child(section(
                 "Startup and recovery",
-                recovery_section(&view, &model, saving, save_error),
+                recovery_section(&view, &model, saving, save_error, cx),
             ))
             .child(section(
                 "File Representation",
@@ -158,23 +144,20 @@ fn recovery_section(
     model: &FilesModel,
     saving: bool,
     save_error: bool,
+    cx: &App,
 ) -> impl IntoElement {
-    let mut body = div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .child(labeled(
-            "On startup",
-            "",
-            persist_choice_row(
-                view,
-                "startUpAction",
-                "setting-startUpAction",
-                FilesModel::startup_choices(),
-                &model.start_up_action,
-                saving,
-            ),
-        ));
+    let mut body = div().flex().flex_col().gap_4().child(labeled(
+        "On startup",
+        "",
+        persist_choice_row(
+            view,
+            "startUpAction",
+            "setting-startUpAction",
+            FilesModel::startup_choices(),
+            &model.start_up_action,
+            saving,
+        ),
+    ));
 
     if model.shows_directory_picker() {
         body = body.child(directory_row(view, model, saving));
@@ -215,14 +198,13 @@ fn recovery_section(
             ),
         ))
         .child(if save_error {
-            div()
-                .text_sm()
-                .text_color(rgb(0xB42318))
-                .child(
-                    "The settings could not be saved. Your previous settings are still in use.",
-                )
+            pref_error(
+                "The settings could not be saved. Your previous settings are still in use.",
+                cx,
+            )
+            .into_any_element()
         } else {
-            div()
+            div().into_any_element()
         });
 
     body
@@ -288,11 +270,7 @@ fn file_representation(view: &Entity<FilesPane>, model: &FilesModel) -> impl Int
         ))
 }
 
-fn directory_row(
-    view: &Entity<FilesPane>,
-    model: &FilesModel,
-    saving: bool,
-) -> impl IntoElement {
+fn directory_row(view: &Entity<FilesPane>, model: &FilesModel, saving: bool) -> impl IntoElement {
     let view = view.clone();
     let disabled = saving;
     div()
@@ -300,54 +278,33 @@ fn directory_row(
         .flex()
         .items_center()
         .gap_3()
-        .child(
-            div()
-                .id("setting-defaultDirectoryToOpen-select")
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if disabled { CHIP } else { ACCENT }))
-                .text_color(rgb(if disabled { MUTED } else { PAGE }))
-                .cursor_pointer()
-                .child(if disabled { "Saving…" } else { "Select Folder" })
-                .on_click(move |_event, _window, app| {
-                    if !disabled {
-                        view.update(app, |pane, cx| pane.request_directory(cx));
-                    }
-                }),
-        )
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(MUTED))
-                .child(if model.default_directory_to_open.is_empty() {
-                    SharedString::from("No folder selected")
+        .child(button_disabled(
+            action_button(
+                "setting-defaultDirectoryToOpen-select",
+                if disabled {
+                    "Saving…"
                 } else {
-                    SharedString::from(model.default_directory_to_open.clone())
-                }),
-        )
+                    "Select Folder"
+                },
+                move |_event, _window, app| {
+                    view.update(app, |pane, cx| pane.request_directory(cx));
+                },
+            ),
+            disabled,
+        ))
+        .child(if model.default_directory_to_open.is_empty() {
+            SharedString::from("No folder selected")
+        } else {
+            SharedString::from(model.default_directory_to_open.clone())
+        })
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn choice_row(
@@ -440,42 +397,25 @@ fn delay_row(view: &Entity<FilesPane>, value: f64) -> impl IntoElement {
         .flex()
         .items_center()
         .gap_2()
-        .child(
-            div()
-                .id("setting-autoSaveDelay-dec")
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(CHIP))
-                .cursor_pointer()
-                .child("−")
-                .on_click(move |_event, _window, app| {
-                    let next = FilesModel::from_snapshot(&decrease.read(app).bridge.get_preferences())
-                        .delay_after_step(-1);
-                    write_back(&decrease, "autoSaveDelay", json_number(next), app);
-                }),
-        )
-        .child(
-            div()
-                .min_w(px(72.))
-                .text_color(rgb(INK))
-                .child(format!("{value:.0} ms")),
-        )
-        .child(
-            div()
-                .id("setting-autoSaveDelay-inc")
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(CHIP))
-                .cursor_pointer()
-                .child("+")
-                .on_click(move |_event, _window, app| {
-                    let next = FilesModel::from_snapshot(&increase.read(app).bridge.get_preferences())
-                        .delay_after_step(1);
-                    write_back(&increase, "autoSaveDelay", json_number(next), app);
-                }),
-        )
+        .child(action_button(
+            "setting-autoSaveDelay-dec",
+            "−",
+            move |_event, _window, app| {
+                let next = FilesModel::from_snapshot(&decrease.read(app).bridge.get_preferences())
+                    .delay_after_step(-1);
+                write_back(&decrease, "autoSaveDelay", json_number(next), app);
+            },
+        ))
+        .child(div().min_w(px(72.)).child(format!("{value:.0} ms")))
+        .child(action_button(
+            "setting-autoSaveDelay-inc",
+            "+",
+            move |_event, _window, app| {
+                let next = FilesModel::from_snapshot(&increase.read(app).bridge.get_preferences())
+                    .delay_after_step(1);
+                write_back(&increase, "autoSaveDelay", json_number(next), app);
+            },
+        ))
 }
 
 fn json_number(value: f64) -> Value {

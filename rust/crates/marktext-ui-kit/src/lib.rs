@@ -7,13 +7,15 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ClickEvent, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window,
-    div, prelude::*, px, rgb,
+    App, ClickEvent, Context, ElementId, IntoElement, ParentElement, Render, SharedString, Styled,
+    Window, div, prelude::*, px, rgb,
 };
-use gpui_components::Sizable;
 use gpui_components::button::{Button, ButtonVariants};
+use gpui_components::group_box::{GroupBox, GroupBoxVariants};
+use gpui_components::label::Label;
 use gpui_components::switch::Switch;
-use gpui_elements::editable_text::text_input;
+use gpui_components::{ActiveTheme, Disableable, Sizable, v_flex};
+use gpui_elements::editable_text::{EditableTextElement, text_area, text_input};
 
 /// Loads the component theme. Call once at startup, before the first control paints.
 pub fn init(cx: &mut App) {
@@ -24,7 +26,6 @@ pub fn init(cx: &mut App) {
 /// `.SystemUIFont`, so every control names this face explicitly.
 pub const UI_FONT: &str = "Liberation Sans";
 
-const TRACK: u32 = 0x2A_2A_2E;
 const INK: u32 = 0xF4_F4_F5;
 const MUTED: u32 = 0xA1_A1_AA;
 
@@ -82,24 +83,145 @@ pub fn action_button(
         .on_click(on_click)
 }
 
+pub fn button_disabled(button: Button, disabled: bool) -> Button {
+    button.disabled(disabled)
+}
+
+pub fn switch_disabled(switch: Switch, disabled: bool) -> Switch {
+    switch.disabled(disabled)
+}
+
+pub fn danger_button(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Button {
+    Button::new(id)
+        .small()
+        .font_family(UI_FONT)
+        .label(label)
+        .danger()
+        .on_click(on_click)
+}
+
+/// Scrollable settings page. The title and background come from the kit theme.
+pub fn pref_page(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement + ParentElement {
+    div()
+        .id(id)
+        .font_family(UI_FONT)
+        .size_full()
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .p_4()
+        .bg(cx.theme().background)
+        .text_color(cx.theme().foreground)
+        .child(Label::new(title).text_xl().font_family(UI_FONT))
+}
+
+pub fn pref_section(title: impl Into<SharedString>, body: impl IntoElement) -> GroupBox {
+    let title = title.into();
+    // Every group on one page needs its own element id. The kit default is shared.
+    GroupBox::new()
+        .id(SharedString::from(format!("section-{title}")))
+        .outline()
+        .title(Label::new(title.clone()).font_family(UI_FONT))
+        .child(body)
+}
+
+pub fn pref_field(
+    label: impl Into<SharedString>,
+    note: &str,
+    control: impl IntoElement,
+) -> impl IntoElement {
+    let heading = if note.is_empty() {
+        Label::new(label).font_family(UI_FONT).into_any_element()
+    } else {
+        Label::new(label)
+            .font_family(UI_FONT)
+            .secondary(note)
+            .into_any_element()
+    };
+    v_flex().gap_2().w_full().child(heading).child(control)
+}
+
+pub fn pref_note(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+    div()
+        .text_sm()
+        .font_family(UI_FONT)
+        .text_color(cx.theme().muted_foreground)
+        .child(text.into())
+}
+
+pub fn pref_error(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+    div()
+        .text_sm()
+        .font_family(UI_FONT)
+        .text_color(cx.theme().danger)
+        .child(text.into())
+}
+
+pub fn pref_text_input(id: impl Into<ElementId>) -> EditableTextElement {
+    text_input(id)
+        .font_family(UI_FONT)
+        .min_h(px(36.))
+        .px_3()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(0xE4_E4_E7))
+        .bg(rgb(0xFF_FF_FF))
+        .text_color(rgb(0x18_18_1B))
+}
+
+pub fn pref_text_area(id: impl Into<ElementId>) -> EditableTextElement {
+    text_area(id)
+        .font_family(UI_FONT)
+        .w_full()
+        .min_h(px(120.))
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(0xE4_E4_E7))
+        .bg(rgb(0xFF_FF_FF))
+        .text_color(rgb(0x18_18_1B))
+}
+
 pub fn text_field(
     id: impl Into<gpui::ElementId>,
     placeholder: impl Into<SharedString>,
 ) -> impl IntoElement {
-    text_input(id)
-        .placeholder(placeholder)
-        .font_family(UI_FONT)
-        .w(px(280.))
-        .min_h(px(32.))
-        .px_2()
-        .bg(rgb(TRACK))
-        .text_color(rgb(INK))
+    pref_text_input(id).placeholder(placeholder).w(px(280.))
 }
 
 pub fn select_control(
     id_prefix: impl Into<SharedString>,
     options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
     selected: impl Into<SharedString>,
+    on_change: impl Fn(SharedString, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    select_buttons(id_prefix, options, selected, false, on_change)
+}
+
+/// Same choices as [`select_control`], drawn disabled. Clicks are ignored.
+pub fn locked_select(
+    id_prefix: impl Into<SharedString>,
+    options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
+    selected: impl Into<SharedString>,
+) -> impl IntoElement {
+    select_buttons(id_prefix, options, selected, true, |_, _, _| {})
+}
+
+fn select_buttons(
+    id_prefix: impl Into<SharedString>,
+    options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
+    selected: impl Into<SharedString>,
+    disabled: bool,
     on_change: impl Fn(SharedString, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let id_prefix = id_prefix.into();
@@ -117,14 +239,18 @@ pub fn select_control(
         let active = value == selected;
         let choose = Rc::clone(&on_change);
         let choice = value.clone();
-        row = row.child(choice_button(
+        let mut button = choice_button(
             SharedString::from(format!("{id_prefix}-{index}")),
             label,
             active,
             move |_event, window, app| {
                 choose(choice.clone(), window, app);
             },
-        ));
+        );
+        if disabled {
+            button = button.disabled(true);
+        }
+        row = row.child(button);
     }
     row
 }

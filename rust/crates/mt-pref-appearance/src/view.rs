@@ -5,9 +5,12 @@ use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
     prelude::*, px, rgb,
 };
-use gpui_elements::editable_text::{EditableTextState, StringStorage, text_area, text_input};
+use gpui_elements::editable_text::{EditableTextState, StringStorage};
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, action_button, choice_button, select_control, toggle};
+use marktext_ui_kit::{
+    action_button, choice_button, pref_field, pref_page, pref_section, pref_text_area,
+    pref_text_input, select_control, toggle,
+};
 use serde_json::{Value, json};
 
 use crate::model::{
@@ -18,7 +21,6 @@ use crate::model::{
 pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
 pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
 
-const PAGE: u32 = 0xFFFFFF;
 const INK: u32 = 0x1C1C1F;
 const MUTED: u32 = 0x5C5C66;
 const LINE: u32 = 0xD8D8DE;
@@ -216,18 +218,7 @@ impl Render for AppearancePane {
         let theme_mode = self.theme_mode;
         let view = cx.entity();
 
-        div()
-            .id("appearance-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Appearance"))
+        pref_page("appearance-pane", "Appearance", cx)
             .child(section(
                 "Theme",
                 theme_section(&view, &model, &search, &query, theme_mode),
@@ -287,18 +278,10 @@ fn theme_section(
             follow,
         ))
         .child(
-            text_input("setting-theme-search")
+            pref_text_input("setting-theme-search")
                 .state(search.downgrade())
                 .placeholder("Search themes")
-                .font_family(UI_FONT)
-                .w(px(280.))
-                .min_h(px(32.))
-                .px_2()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(LINE))
-                .bg(rgb(PAGE))
-                .text_color(rgb(INK)),
+                .w(px(280.)),
         );
     if model.follow_system_theme {
         column = column
@@ -421,19 +404,9 @@ fn css_editor(
         .flex_col()
         .gap_2()
         .child(
-            text_area("setting-customCss")
+            pref_text_area("setting-customCss")
                 .state(draft.downgrade())
-                .placeholder("Custom CSS")
-                .font_family("Liberation Sans")
-                .w_full()
-                .min_h(px(120.))
-                .px_2()
-                .py_2()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(LINE))
-                .bg(rgb(PAGE))
-                .text_color(rgb(INK)),
+                .placeholder("Custom CSS"),
         )
         .child(save_button(
             "setting-customCss-save",
@@ -660,18 +633,10 @@ fn font_field(field: FontField<'_>) -> impl IntoElement {
                     }
                 })
                 .child(
-                    text_input(id)
+                    pref_text_input(id)
                         .state(draft.downgrade())
                         .placeholder(title)
-                        .font_family(UI_FONT)
-                        .w(px(280.))
-                        .min_h(px(32.))
-                        .px_2()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(rgb(LINE))
-                        .bg(rgb(PAGE))
-                        .text_color(rgb(INK)),
+                        .w(px(280.)),
                 )
                 .child(save_button(
                     SharedString::from(format!("{id}-save")),
@@ -802,25 +767,11 @@ fn error_line(message: Option<&'static str>) -> impl IntoElement {
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn write_back(view: &Entity<AppearancePane>, key: &'static str, value: Value, app: &mut App) {

@@ -195,8 +195,13 @@ impl KeybindingsModel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToggleAction {
     Ignore,
-    StartRecording { command_id: String },
-    Save { command_id: String, accelerator: String },
+    StartRecording {
+        command_id: String,
+    },
+    Save {
+        command_id: String,
+        accelerator: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -329,8 +334,14 @@ mod tests {
     fn groups_match_the_vue_helper() {
         assert_eq!(command_group("file.save"), CommandGroup::File);
         assert_eq!(command_group("file.quit"), CommandGroup::Window);
-        assert_eq!(command_group("edit.create-paragraph"), CommandGroup::Paragraph);
-        assert_eq!(command_group("spellchecker.switch-language"), CommandGroup::Edit);
+        assert_eq!(
+            command_group("edit.create-paragraph"),
+            CommandGroup::Paragraph
+        );
+        assert_eq!(
+            command_group("spellchecker.switch-language"),
+            CommandGroup::Edit
+        );
         assert_eq!(command_group("tabs.cycleForward"), CommandGroup::Window);
         assert_eq!(group_label(CommandGroup::Window), "Window and navigation");
     }
@@ -399,8 +410,13 @@ mod tests {
             other => panic!("expected conflict, got {other:?}"),
         }
         let reset = gate.request_reset_all().expect("ready again");
-        match gate.finish(reset.id, "persisted", Some(vec![entry("file.save", "Ctrl+S", "Ctrl+S")]), None, None)
-        {
+        match gate.finish(
+            reset.id,
+            "persisted",
+            Some(vec![entry("file.save", "Ctrl+S", "Ctrl+S")]),
+            None,
+            None,
+        ) {
             PersistDecision::Applied { commands } => {
                 assert_eq!(commands.unwrap().len(), 1);
             }

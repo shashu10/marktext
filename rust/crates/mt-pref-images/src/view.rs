@@ -6,9 +6,12 @@ use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px,
     rgb,
 };
-use gpui_elements::editable_text::{EditableTextState, text_input};
+use gpui_elements::editable_text::EditableTextState;
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{
+    action_button, button_disabled, choice_button, pref_field, pref_page, pref_section,
+    pref_text_input, select_control, toggle,
+};
 use serde_json::{Value, json};
 
 use crate::model::{
@@ -21,10 +24,8 @@ pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
 /// Host-only actions: user-data writes, folder picker, open path/url, probes.
 pub type HostActionPublisher = Rc<dyn Fn(u64, String, Value)>;
 
-const PAGE: u32 = 0xFFFFFF;
 const INK: u32 = 0x1C1C1F;
 const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
 const ACCENT: u32 = 0x4C9AFF;
 const DANGER: u32 = 0xB42318;
 
@@ -213,9 +214,7 @@ impl ImagesPane {
                 let ok = status == "ok"
                     && payload.get("executable").and_then(Value::as_bool) == Some(true);
                 self.cli_script_error = !ok;
-                if ok
-                    && let Some(path) = payload.get("path").and_then(Value::as_str)
-                {
+                if ok && let Some(path) = payload.get("path").and_then(Value::as_str) {
                     self.user_data.insert(
                         UserDataKeys::CLI_SCRIPT.to_string(),
                         Value::String(path.to_string()),
@@ -351,7 +350,8 @@ impl Render for ImagesPane {
         self.cli_draft = Some(cli_draft.clone());
         let view = cx.entity();
 
-        let unanswered = self.pandoc.status == DetectionState::Checking && self.pandoc.path.is_empty();
+        let unanswered =
+            self.pandoc.status == DetectionState::Checking && self.pandoc.path.is_empty();
         let probe_path = if unanswered {
             None
         } else if self.pandoc.status == DetectionState::Found {
@@ -360,24 +360,9 @@ impl Render for ImagesPane {
             Some("")
         };
         let pandoc = pandoc_switch_state(probe_path, model.show_pandoc_convert);
-        let pandoc_disabled = if unanswered {
-            false
-        } else {
-            pandoc.disabled
-        };
+        let pandoc_disabled = if unanswered { false } else { pandoc.disabled };
 
-        let mut root = div()
-            .id("images-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Images & export"))
+        let mut root = pref_page("images-pane", "Images & export", cx)
             .child(pandoc_section(
                 &view,
                 model.show_pandoc_convert,
@@ -483,14 +468,18 @@ fn pandoc_section(
                             }))
                             .child(status_text),
                     )
-                    .child(chip_button("setting-pandoc-recheck", "Check again", move |app| {
-                        view_check.update(app, |pane, cx| {
-                            pane.pandoc.status = DetectionState::Checking;
-                            pane.pandoc.message = "Checking…".to_string();
-                            pane.request_action("probe-pandoc", json!({}));
-                            cx.notify();
-                        });
-                    })),
+                    .child(chip_button(
+                        "setting-pandoc-recheck",
+                        "Check again",
+                        move |app| {
+                            view_check.update(app, |pane, cx| {
+                                pane.pandoc.status = DetectionState::Checking;
+                                pane.pandoc.message = "Checking…".to_string();
+                                pane.request_action("probe-pandoc", json!({}));
+                                cx.notify();
+                            });
+                        },
+                    )),
             ),
     )
 }
@@ -539,15 +528,10 @@ fn folder_section(
                                 });
                             })
                             .child(
-                                text_input("setting-imageFolderPath")
+                                pref_text_input("setting-imageFolderPath")
                                     .state(folder_draft.downgrade())
                                     .placeholder("/path/to/images")
-                                    .font_family(UI_FONT)
-                                    .w(px(420.))
-                                    .min_h(px(32.))
-                                    .px_2()
-                                    .bg(rgb(CHIP))
-                                    .text_color(rgb(INK)),
+                                    .w(px(420.)),
                             ),
                     )
                     .child(error_line(folder_error, "Enter an absolute folder path."))
@@ -624,42 +608,41 @@ fn folder_section(
                             .gap_2()
                             .child(div().text_color(rgb(INK)).child("Relative folder name"))
                             .child(
-                                text_input("setting-imageRelativeDirectoryName")
+                                pref_text_input("setting-imageRelativeDirectoryName")
                                     .state(relative_draft.downgrade())
                                     .placeholder("assets")
-                                    .font_family(UI_FONT)
-                                    .w(px(280.))
-                                    .min_h(px(32.))
-                                    .px_2()
-                                    .bg(rgb(CHIP))
-                                    .text_color(rgb(INK)),
+                                    .w(px(280.)),
                             )
                             .child(error_line(relative_error, "Enter a relative folder name."))
-                            .child(accent_button("setting-imageRelativeDirectoryName-save", "Save", {
-                                let draft = relative_for_save;
-                                let view = view_save_relative;
-                                let disabled = relative_disabled;
-                                move |app| {
-                                    if disabled {
-                                        return;
-                                    }
-                                    let typed = draft.read(app).as_str().to_string();
-                                    view.update(app, |pane, cx| {
-                                        if relative_directory_name_valid(&typed) {
-                                            pane.relative_name_error = false;
-                                            pane.request_persist(
-                                                "imageRelativeDirectoryName",
-                                                Value::String(typed.clone()),
-                                                Some(typed),
-                                                cx,
-                                            );
-                                        } else {
-                                            pane.relative_name_error = true;
-                                            cx.notify();
+                            .child(accent_button(
+                                "setting-imageRelativeDirectoryName-save",
+                                "Save",
+                                {
+                                    let draft = relative_for_save;
+                                    let view = view_save_relative;
+                                    let disabled = relative_disabled;
+                                    move |app| {
+                                        if disabled {
+                                            return;
                                         }
-                                    });
-                                }
-                            })),
+                                        let typed = draft.read(app).as_str().to_string();
+                                        view.update(app, |pane, cx| {
+                                            if relative_directory_name_valid(&typed) {
+                                                pane.relative_name_error = false;
+                                                pane.request_persist(
+                                                    "imageRelativeDirectoryName",
+                                                    Value::String(typed.clone()),
+                                                    Some(typed),
+                                                    cx,
+                                                );
+                                            } else {
+                                                pane.relative_name_error = true;
+                                                cx.notify();
+                                            }
+                                        });
+                                    }
+                                },
+                            )),
                     )
                     .child(
                         div()
@@ -692,31 +675,27 @@ fn uploader_section(
         .flex()
         .flex_col()
         .gap_4()
-        .child(labeled(
-            "Image Uploader",
-            "",
-            {
-                let options = ImagesModel::uploader_choices();
-                let selected = model.current_uploader.clone();
-                select_control(
-                    "setting-currentUploader",
-                    options.iter().map(|c| (c.value, c.label)),
-                    selected,
-                    move |chosen, _window, app| {
-                        view_uploader.update(app, |pane, cx| {
-                            pane.write_user_data(
-                                UserDataKeys::CURRENT_UPLOADER,
-                                Value::String(chosen.to_string()),
-                                cx,
-                            );
-                            if chosen.as_ref() == "picgo" {
-                                pane.picgo.started = false;
-                            }
-                        });
-                    },
-                )
-            },
-        ));
+        .child(labeled("Image Uploader", "", {
+            let options = ImagesModel::uploader_choices();
+            let selected = model.current_uploader.clone();
+            select_control(
+                "setting-currentUploader",
+                options.iter().map(|c| (c.value, c.label)),
+                selected,
+                move |chosen, _window, app| {
+                    view_uploader.update(app, |pane, cx| {
+                        pane.write_user_data(
+                            UserDataKeys::CURRENT_UPLOADER,
+                            Value::String(chosen.to_string()),
+                            cx,
+                        );
+                        if chosen.as_ref() == "picgo" {
+                            pane.picgo.started = false;
+                        }
+                    });
+                },
+            )
+        }));
 
     if model.show_picgo() {
         body = body.child(picgo_block(view, picgo, guide_open, debug_open));
@@ -744,7 +723,8 @@ fn picgo_block(
     } else {
         picgo.message.clone()
     };
-    let show_install = picgo.status == DetectionState::NotFound || picgo.status == DetectionState::Failed;
+    let show_install =
+        picgo.status == DetectionState::NotFound || picgo.status == DetectionState::Failed;
 
     div()
         .flex()
@@ -765,14 +745,18 @@ fn picgo_block(
                         }))
                         .child(status),
                 )
-                .child(chip_button("setting-picgo-recheck", "Check again", move |app| {
-                    view_check.update(app, |pane, cx| {
-                        pane.picgo.status = DetectionState::Checking;
-                        pane.picgo.message = "Checking…".to_string();
-                        pane.request_action("probe-picgo", json!({}));
-                        cx.notify();
-                    });
-                })),
+                .child(chip_button(
+                    "setting-picgo-recheck",
+                    "Check again",
+                    move |app| {
+                        view_check.update(app, |pane, cx| {
+                            pane.picgo.status = DetectionState::Checking;
+                            pane.picgo.message = "Checking…".to_string();
+                            pane.request_action("probe-picgo", json!({}));
+                            cx.notify();
+                        });
+                    },
+                )),
         )
         .child(if picgo.last_detection.is_empty() {
             div()
@@ -813,40 +797,42 @@ fn picgo_block(
         } else {
             div().into_any_element()
         })
-        .child(if picgo.status == DetectionState::Failed && !picgo.debug.is_empty() {
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .id("setting-picgo-debug-toggle")
-                        .cursor_pointer()
-                        .text_sm()
-                        .child(if debug_open {
-                            "▾ Debug Info"
-                        } else {
-                            "▸ Debug Info"
-                        })
-                        .on_click(move |_event, _window, app| {
-                            view_debug.update(app, |pane, cx| {
-                                pane.debug_open = !pane.debug_open;
-                                cx.notify();
-                            });
-                        }),
-                )
-                .child(if debug_open {
-                    div()
-                        .text_sm()
-                        .text_color(rgb(MUTED))
-                        .child(picgo.debug.clone())
-                } else {
-                    div()
-                })
-                .into_any_element()
-        } else {
-            div().into_any_element()
-        })
+        .child(
+            if picgo.status == DetectionState::Failed && !picgo.debug.is_empty() {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("setting-picgo-debug-toggle")
+                            .cursor_pointer()
+                            .text_sm()
+                            .child(if debug_open {
+                                "▾ Debug Info"
+                            } else {
+                                "▸ Debug Info"
+                            })
+                            .on_click(move |_event, _window, app| {
+                                view_debug.update(app, |pane, cx| {
+                                    pane.debug_open = !pane.debug_open;
+                                    cx.notify();
+                                });
+                            }),
+                    )
+                    .child(if debug_open {
+                        div()
+                            .text_sm()
+                            .text_color(rgb(MUTED))
+                            .child(picgo.debug.clone())
+                    } else {
+                        div()
+                    })
+                    .into_any_element()
+            } else {
+                div().into_any_element()
+            },
+        )
 }
 
 fn guide_content(
@@ -854,7 +840,12 @@ fn guide_content(
     view_docs: Entity<ImagesPane>,
     view_core: Entity<ImagesPane>,
 ) -> impl IntoElement {
-    let mut column = div().flex().flex_col().gap_2().text_sm().text_color(rgb(MUTED));
+    let mut column = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .text_sm()
+        .text_color(rgb(MUTED));
     if show_install {
         column = column
             .child(div().child("Choose installation method:"))
@@ -917,36 +908,40 @@ fn cli_script_block(
         .flex()
         .flex_col()
         .gap_2()
-        .child(div().text_sm().text_color(rgb(MUTED)).child("Script Description"))
+        .child(
+            div()
+                .text_sm()
+                .text_color(rgb(MUTED))
+                .child("Script Description"),
+        )
         .child(div().text_color(rgb(INK)).child("Script Location"))
         .child(
-            text_input("setting-cliScript")
+            pref_text_input("setting-cliScript")
                 .state(cli_draft.downgrade())
                 .placeholder("Script path")
-                .font_family(UI_FONT)
-                .w(px(420.))
-                .min_h(px(32.))
-                .px_2()
-                .bg(rgb(CHIP))
-                .text_color(rgb(INK)),
+                .w(px(420.)),
         )
         .child(error_line(
             cli_error,
             "Enter the path to an existing executable script.",
         ))
-        .child(accent_button("setting-cliScript-save", "Save", move |app| {
-            let typed = draft_for_save.read(app).as_str().to_string();
-            view_save.update(app, |pane, cx| {
-                if typed.is_empty() {
-                    pane.cli_script_error = true;
+        .child(accent_button(
+            "setting-cliScript-save",
+            "Save",
+            move |app| {
+                let typed = draft_for_save.read(app).as_str().to_string();
+                view_save.update(app, |pane, cx| {
+                    if typed.is_empty() {
+                        pane.cli_script_error = true;
+                        cx.notify();
+                        return;
+                    }
+                    pane.cli_script_error = false;
+                    pane.request_action("is-executable", json!({ "path": typed }));
                     cx.notify();
-                    return;
-                }
-                pane.cli_script_error = false;
-                pane.request_action("is-executable", json!({ "path": typed }));
-                cx.notify();
-            });
-        }))
+                });
+            },
+        ))
 }
 
 fn commit_folder_path(pane: &mut ImagesPane, typed: String, cx: &mut Context<ImagesPane>) {
@@ -960,25 +955,11 @@ fn commit_folder_path(pane: &mut ImagesPane, typed: String, cx: &mut Context<Ima
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn choice_row(
@@ -1033,15 +1014,7 @@ fn chip_button(
     label: &'static str,
     on_click: impl Fn(&mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(id)
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(CHIP))
-        .cursor_pointer()
-        .child(label)
-        .on_click(move |_event, _window, app| on_click(app))
+    choice_button(id, label, false, move |_event, _window, app| on_click(app))
 }
 
 fn accent_button(
@@ -1049,24 +1022,12 @@ fn accent_button(
     label: &'static str,
     on_click: impl Fn(&mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(id)
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(ACCENT))
-        .text_color(rgb(PAGE))
-        .cursor_pointer()
-        .child(label)
-        .on_click(move |_event, _window, app| on_click(app))
+    action_button(id, label, move |_event, _window, app| on_click(app))
 }
 
 fn code_chip(text: &'static str) -> impl IntoElement {
-    div()
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(CHIP))
-        .text_color(rgb(INK))
-        .child(text)
+    button_disabled(
+        choice_button(text, text, false, |_event, _window, _app| {}),
+        true,
+    )
 }

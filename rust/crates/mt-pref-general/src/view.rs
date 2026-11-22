@@ -3,11 +3,14 @@ use std::sync::Arc;
 
 use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px, rgb,
+    prelude::*, px,
 };
-use gpui_elements::editable_text::{EditableTextState, text_input};
+use gpui_elements::editable_text::EditableTextState;
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{
+    action_button, choice_button, pref_error, pref_field, pref_page, pref_section, pref_text_input,
+    select_control, toggle,
+};
 use serde_json::Value;
 
 use crate::model::{
@@ -19,11 +22,6 @@ pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
 
 /// Exclusion edits. The host answers with `PREFERENCE_RESULT` before the draft is cleared.
 pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
-
-const PAGE: u32 = 0xFFFFFF;
-const INK: u32 = 0x1C1C1F;
-const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
 
 pub struct GeneralPane {
     bridge: Arc<MemoryHostBridge>,
@@ -96,18 +94,7 @@ impl Render for GeneralPane {
         let saving = self.gate.is_busy();
         let view = cx.entity();
 
-        div()
-            .id("general-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("General"))
+        pref_page("general-pane", "General", cx)
             .child(section(
                 "Language",
                 labeled(
@@ -172,7 +159,7 @@ impl Render for GeneralPane {
                         "",
                         bool_row(&view, "openFilesInPreviewMode", "setting-openFilesInPreviewMode", model.open_files_in_preview_mode),
                     ))
-                    .child(exclude_editor(&view, &model, draft, save_error, saving))
+                    .child(exclude_editor(&view, &model, draft, save_error, saving, cx))
                     .child(labeled(
                         "File Sort By",
                         "",
@@ -188,25 +175,11 @@ impl Render for GeneralPane {
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn choice_row(
@@ -241,102 +214,83 @@ fn exclude_editor(
     draft: Entity<EditableTextState>,
     save_error: bool,
     saving: bool,
+    cx: &App,
 ) -> impl IntoElement {
     let mut chips = div().flex().flex_wrap().gap_2();
     for (index, pattern) in model.exclude_patterns.iter().enumerate() {
         let view = view.clone();
-        chips = chips.child(
-            div()
-                .id(SharedString::from(format!(
-                    "setting-treePathExcludePatterns-remove-{index}"
-                )))
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(CHIP))
-                .cursor_pointer()
-                .child(format!("{pattern}  ×"))
-                .on_click(move |_event, _window, app| {
-                    let current =
-                        GeneralModel::from_snapshot(&view.read(app).bridge.get_preferences());
-                    let next = current.patterns_without(index);
-                    if next.len() != current.exclude_patterns.len() {
-                        view.update(app, |pane, cx| {
-                            pane.request_persist(
-                                "treePathExcludePatterns",
-                                string_array(&next),
-                                None,
-                                cx,
-                            );
-                        });
-                    }
-                }),
-        );
+        chips = chips.child(choice_button(
+            SharedString::from(format!("setting-treePathExcludePatterns-remove-{index}")),
+            format!("{pattern}  ×"),
+            false,
+            move |_event, _window, app| {
+                let current = GeneralModel::from_snapshot(&view.read(app).bridge.get_preferences());
+                let next = current.patterns_without(index);
+                if next.len() != current.exclude_patterns.len() {
+                    view.update(app, |pane, cx| {
+                        pane.request_persist(
+                            "treePathExcludePatterns",
+                            string_array(&next),
+                            None,
+                            cx,
+                        );
+                    });
+                }
+            },
+        ));
     }
 
     let view = view.clone();
     let draft_for_add = draft.clone();
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child("File tree exclusion rules"))
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(MUTED))
-                .child("Paths matching any glob rule are excluded from the file tree. Add a rule, or click one to remove it. Reopen the folder to fully apply changes."),
+    let error = if save_error {
+        pref_error(
+            "Could not save exclusion rules. The saved rules have been kept. Please try again.",
+            cx,
         )
-        .child(chips)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .on_key_down({
-                    let view = view.clone();
-                    let draft_for_enter = draft_for_add.clone();
-                    move |event, _window, app| {
-                        let plain_enter = event.keystroke.key == "enter" && !event.keystroke.modifiers.modified();
-                        if plain_enter {
-                            submit_exclusion(&view, &draft_for_enter, app);
+        .into_any_element()
+    } else {
+        div().into_any_element()
+    };
+    pref_field(
+        "File tree exclusion rules",
+        "Paths matching any glob rule are excluded from the file tree. Add a rule, or click one to remove it. Reopen the folder to fully apply changes.",
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(chips)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .on_key_down({
+                        let view = view.clone();
+                        let draft_for_enter = draft_for_add.clone();
+                        move |event, _window, app| {
+                            let plain_enter = event.keystroke.key == "enter"
+                                && !event.keystroke.modifiers.modified();
+                            if plain_enter {
+                                submit_exclusion(&view, &draft_for_enter, app);
+                            }
                         }
-                    }
-                })
-                .child(
-                    text_input("setting-treePathExcludePatterns-draft")
-                        .state(draft.downgrade())
-                        .placeholder("For example: **/drafts/** or *.tmp")
-                        .font_family(UI_FONT)
-                        .w(px(360.))
-                        .min_h(px(32.))
-                        .px_2()
-                        .bg(rgb(CHIP))
-                        .text_color(rgb(INK)),
-                )
-                .child(
-                    div()
-                        .id("setting-treePathExcludePatterns-add")
-                        .px_3()
-                        .py_1()
-                        .rounded_md()
-                        .bg(rgb(0x4C9AFF))
-                        .text_color(rgb(PAGE))
-                        .cursor_pointer()
-                        .child(if saving { "Saving…" } else { "Add" })
-                        .on_click(move |_event, _window, app| {
+                    })
+                    .child(
+                        pref_text_input("setting-treePathExcludePatterns-draft")
+                            .state(draft.downgrade())
+                            .placeholder("For example: **/drafts/** or *.tmp")
+                            .w(px(360.)),
+                    )
+                    .child(action_button(
+                        "setting-treePathExcludePatterns-add",
+                        if saving { "Saving…" } else { "Add" },
+                        move |_event, _window, app| {
                             submit_exclusion(&view, &draft_for_add, app);
-                        }),
-                ),
-        )
-        .child(if save_error {
-            div()
-                .text_sm()
-                .text_color(rgb(0xB42318))
-                .child("Could not save exclusion rules. The saved rules have been kept. Please try again.")
-        } else {
-            div()
-        })
+                        },
+                    )),
+            )
+            .child(error),
+    )
 }
 
 fn submit_exclusion(view: &Entity<GeneralPane>, draft: &Entity<EditableTextState>, app: &mut App) {

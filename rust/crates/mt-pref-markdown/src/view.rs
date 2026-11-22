@@ -2,12 +2,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px, rgb,
+    App, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px,
 };
-use gpui_elements::editable_text::{EditableTextState, text_input};
+use gpui_elements::editable_text::EditableTextState;
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{
+    action_button, locked_select, pref_error, pref_field, pref_page, pref_section, pref_text_input,
+    select_control, toggle,
+};
 use serde_json::Value;
 
 use crate::model::{
@@ -19,13 +21,6 @@ pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
 
 /// PlantUML URL edits. The host answers with `PREFERENCE_RESULT` before the value is trusted.
 pub type PersistPublisher = Rc<dyn Fn(u64, String, Value)>;
-
-const PAGE: u32 = 0xFFFFFF;
-const INK: u32 = 0x1C1C1F;
-const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
-const ACCENT: u32 = 0x4C9AFF;
-const DISABLED_CHIP: u32 = 0xE4E4E7;
 
 pub struct MarkdownPane {
     bridge: Arc<MemoryHostBridge>,
@@ -89,8 +84,7 @@ impl MarkdownPane {
 impl Render for MarkdownPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let model = MarkdownModel::from_snapshot(&self.bridge.get_preferences());
-        let plantuml =
-            EditableTextState::use_keyed("setting-plantumlServer-draft", window, cx);
+        let plantuml = EditableTextState::use_keyed("setting-plantumlServer-draft", window, cx);
         if !self.plantuml_seeded {
             plantuml.update(cx, |state, cx| {
                 state.emplace(&model.plantuml_server, cx);
@@ -103,18 +97,7 @@ impl Render for MarkdownPane {
         let invalid = self.plantuml_invalid;
         let view = cx.entity();
 
-        div()
-            .id("markdown-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Markdown"))
+        pref_page("markdown-pane", "Markdown", cx)
             .child(section(
                 "Lists",
                 div()
@@ -367,6 +350,7 @@ impl Render for MarkdownPane {
                         save_error,
                         saving,
                         invalid,
+                        cx,
                     )),
             ))
             .child(section(
@@ -385,25 +369,11 @@ impl Render for MarkdownPane {
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn choice_row(
@@ -448,26 +418,12 @@ fn bool_row(
     })
 }
 
-fn disabled_choice_row(
-    id: &'static str,
-    choices: &[Choice],
-    selected: &str,
-) -> impl IntoElement {
-    let mut row = div().id(id).font_family(UI_FONT).flex().flex_wrap().gap_2();
-    for (index, choice) in choices.iter().enumerate() {
-        let active = choice.value == selected;
-        row = row.child(
-            div()
-                .id(SharedString::from(format!("{id}-{index}")))
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if active { DISABLED_CHIP } else { CHIP }))
-                .text_color(rgb(MUTED))
-                .child(choice.label),
-        );
-    }
-    row
+fn disabled_choice_row(id: &'static str, choices: &[Choice], selected: &str) -> impl IntoElement {
+    locked_select(
+        id,
+        choices.iter().map(|choice| (choice.value, choice.label)),
+        selected,
+    )
 }
 
 fn plantuml_editor(
@@ -476,76 +432,63 @@ fn plantuml_editor(
     save_error: bool,
     saving: bool,
     invalid: bool,
+    cx: &App,
 ) -> impl IntoElement {
     let view = view.clone();
     let draft_for_save = draft.clone();
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child("PlantUML Server URL"))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .on_key_down({
-                    let view = view.clone();
-                    let draft_for_enter = draft_for_save.clone();
-                    move |event, _window, app| {
-                        let plain_enter =
-                            event.keystroke.key == "enter" && !event.keystroke.modifiers.modified();
-                        if plain_enter {
-                            submit_plantuml(&view, &draft_for_enter, app);
+    let message = if invalid {
+        Some("Enter an http:// or https:// URL, or leave the field empty.")
+    } else if save_error {
+        Some("Could not save the PlantUML server URL. Please try again.")
+    } else {
+        None
+    };
+    let error = match message {
+        Some(text) => pref_error(text, cx).into_any_element(),
+        None => div().into_any_element(),
+    };
+    pref_field(
+        "PlantUML Server URL",
+        "",
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .on_key_down({
+                        let view = view.clone();
+                        let draft_for_enter = draft_for_save.clone();
+                        move |event, _window, app| {
+                            let plain_enter = event.keystroke.key == "enter"
+                                && !event.keystroke.modifiers.modified();
+                            if plain_enter {
+                                submit_plantuml(&view, &draft_for_enter, app);
+                            }
                         }
-                    }
-                })
-                .child(
-                    text_input("setting-plantumlServer")
-                        .state(draft.downgrade())
-                        .placeholder("https://www.plantuml.com/plantuml")
-                        .font_family(UI_FONT)
-                        .w(px(420.))
-                        .min_h(px(32.))
-                        .px_2()
-                        .bg(rgb(CHIP))
-                        .text_color(rgb(INK)),
-                )
-                .child(
-                    div()
-                        .id("setting-plantumlServer-save")
-                        .px_3()
-                        .py_1()
-                        .rounded_md()
-                        .bg(rgb(ACCENT))
-                        .text_color(rgb(PAGE))
-                        .cursor_pointer()
-                        .child(if saving { "Saving…" } else { "Save" })
-                        .on_click(move |_event, _window, app| {
+                    })
+                    .child(
+                        pref_text_input("setting-plantumlServer")
+                            .state(draft.downgrade())
+                            .placeholder("https://www.plantuml.com/plantuml")
+                            .w(px(420.)),
+                    )
+                    .child(action_button(
+                        "setting-plantumlServer-save",
+                        if saving { "Saving…" } else { "Save" },
+                        move |_event, _window, app| {
                             submit_plantuml(&view, &draft_for_save, app);
-                        }),
-                ),
-        )
-        .child(if invalid {
-            div()
-                .text_sm()
-                .text_color(rgb(0xB42318))
-                .child("Enter an http:// or https:// URL, or leave the field empty.")
-        } else if save_error {
-            div()
-                .text_sm()
-                .text_color(rgb(0xB42318))
-                .child("Could not save the PlantUML server URL. Please try again.")
-        } else {
-            div()
-        })
+                        },
+                    )),
+            )
+            .child(error),
+    )
 }
 
-fn submit_plantuml(
-    view: &Entity<MarkdownPane>,
-    draft: &Entity<EditableTextState>,
-    app: &mut App,
-) {
+fn submit_plantuml(view: &Entity<MarkdownPane>, draft: &Entity<EditableTextState>, app: &mut App) {
     let text = draft.read(app).as_str().to_string();
     if !plantuml_url_ok(&text) {
         view.update(app, |pane, cx| {
