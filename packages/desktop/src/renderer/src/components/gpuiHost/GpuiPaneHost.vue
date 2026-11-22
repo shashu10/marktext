@@ -64,6 +64,17 @@ const post = (message: Record<string, unknown>): void => {
   frame.value?.contentWindow?.postMessage(message, '*')
 }
 
+const persistPreference = async (id: number, key: string, value: unknown): Promise<void> => {
+  let status: 'persisted' | 'failed' = 'failed'
+  try {
+    const result = await window.electron.ipcRenderer.invoke('mt::preferences::update', { [key]: value }) as { status?: string }
+    if (result.status === 'persisted') status = 'persisted'
+  } catch {
+    status = 'failed'
+  }
+  post({ type: 'PREFERENCE_RESULT', id, status })
+}
+
 const sendSnapshot = (): void => {
   post({
     type: 'PREFERENCES',
@@ -87,6 +98,10 @@ const onWindowMessage = (event: MessageEvent): void => {
   if (!command) return
   if (command.type === 'set-preference') {
     window.electron.ipcRenderer.send('mt::set-user-preference', { [command.key]: command.value })
+    return
+  }
+  if (command.type === 'persist-preference') {
+    void persistPreference(command.id, command.key, command.value)
     return
   }
   if (command.type === 'scroll-to-header') {

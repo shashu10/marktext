@@ -82,6 +82,17 @@ describe('GpuiPaneHost protocol', () => {
       key: 'autoSave',
       value: true
     })
+    expect(frameMessageToCommand({
+      type: 'PERSIST_PREFERENCE',
+      id: 1,
+      key: 'treePathExcludePatterns',
+      value: ['*.tmp']
+    })).toEqual({
+      type: 'persist-preference',
+      id: 1,
+      key: 'treePathExcludePatterns',
+      value: ['*.tmp']
+    })
     expect(frameMessageToCommand({ type: 'SCROLL_TO_HEADER', slug: 'intro' })).toEqual({
       type: 'scroll-to-header',
       slug: 'intro'

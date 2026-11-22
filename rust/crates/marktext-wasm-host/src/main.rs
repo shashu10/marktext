@@ -14,7 +14,7 @@ fn main() {
         load_fonts(cx);
         cx.bind_keys(default_bindings().as_keybindings(Some(DEFAULT_INPUT_CONTEXT)));
 
-        let host = cx.new(|_cx| HostView::new("general"));
+        let host = cx.new(|cx| HostView::new("general", cx));
         #[cfg(target_family = "wasm")]
         install_host_messages(host.clone(), cx);
 
@@ -56,7 +56,7 @@ fn install_host_messages(host: Entity<HostView>, cx: &mut App) {
             window.add_event_listener_with_callback("message", listener.as_ref().unchecked_ref());
         listener.forget();
         // The parent posts SET_PANE on iframe load, before this listener exists.
-        post_to_parent(&marktext_core::GuestToHost::Ready { pane: None });
+        marktext_wasm_host::post_to_parent(&marktext_core::GuestToHost::Ready { pane: None });
     }
 
     cx.spawn(async move |cx| {
@@ -66,29 +66,15 @@ fn install_host_messages(host: Entity<HostView>, cx: &mut App) {
             };
             let reply = cx.update(|app| {
                 host.update(app, |view, cx| {
-                    let reply = view.apply(&message);
+                    let reply = view.apply(&message, cx);
                     cx.notify();
                     reply
                 })
             });
             if let Some(reply) = reply {
-                post_to_parent(&reply);
+                marktext_wasm_host::post_to_parent(&reply);
             }
         }
     })
     .detach();
-}
-
-#[cfg(target_family = "wasm")]
-fn post_to_parent(reply: &marktext_core::GuestToHost) {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    let Ok(Some(parent)) = window.parent() else {
-        return;
-    };
-    let Ok(value) = serde_wasm_bindgen::to_value(reply) else {
-        return;
-    };
-    let _ = parent.post_message(&value, "*");
 }
