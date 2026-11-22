@@ -83,11 +83,12 @@ impl HostView {
             )
         });
         let keybindings = cx.new(|cx| KeybindingsPane::new(Rc::new(publish_keybinding), cx));
-        let shell = cx.new(|_cx| {
+        let shell = cx.new(|cx| {
             PrefShellPane::new(
                 Rc::new(publish_host_action),
                 Rc::new(request_keybindings),
                 false,
+                cx,
             )
         });
         Self {

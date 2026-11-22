@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px, rgb,
+    Context, Entity, FocusHandle, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, prelude::*, px, rgb,
 };
 use gpui_elements::editable_text::{EditableTextState, text_input};
 use marktext_core::KeybindingEntry;
@@ -37,6 +37,8 @@ pub struct PrefShellPane {
     next_action_id: u64,
     query_field: Option<Entity<EditableTextState>>,
     last_query_snapshot: String,
+    /// Tab stops for the seven category buttons (after the search field).
+    category_focus: Vec<FocusHandle>,
 }
 
 impl PrefShellPane {
@@ -44,7 +46,18 @@ impl PrefShellPane {
         publish_action: HostActionPublisher,
         request_keybindings: KeybindingsRequester,
         is_mac: bool,
+        cx: &mut Context<Self>,
     ) -> Self {
+        let category_focus = PREFERENCE_CATEGORIES
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                // Search field owns tab index 0 via EditableTextState.
+                cx.focus_handle()
+                    .tab_stop(true)
+                    .tab_index((index as isize) + 1)
+            })
+            .collect();
         Self {
             model: PrefShellModel::new(is_mac),
             publish_action,
@@ -52,6 +65,7 @@ impl PrefShellPane {
             next_action_id: 1,
             query_field: None,
             last_query_snapshot: String::new(),
+            category_focus,
         }
     }
 
@@ -116,6 +130,7 @@ impl Render for PrefShellPane {
         let view = cx.entity();
         let active = self.model.active_category.clone();
         let suggestions = self.model.suggestions.clone();
+        let category_focus = self.category_focus.clone();
 
         div()
             .id("pref-shell-sidebar")
@@ -134,7 +149,7 @@ impl Render for PrefShellPane {
                     .child(SIDEBAR_TITLE),
             )
             .child(search_block(&view, query_field, &suggestions))
-            .child(category_list(&view, &active))
+            .child(category_list(&view, &active, &category_focus))
     }
 }
 
@@ -248,7 +263,11 @@ fn suggestion_row(
         .child(div().text_xs().text_color(rgb(MUTED)).child(subtitle))
 }
 
-fn category_list(view: &Entity<PrefShellPane>, active: &str) -> impl IntoElement {
+fn category_list(
+    view: &Entity<PrefShellPane>,
+    active: &str,
+    category_focus: &[FocusHandle],
+) -> impl IntoElement {
     let mut list = div()
         .id("pref-shell-categories")
         .flex()
@@ -256,13 +275,19 @@ fn category_list(view: &Entity<PrefShellPane>, active: &str) -> impl IntoElement
         .flex_1()
         .min_h(px(0.))
         .overflow_y_scroll();
-    for category in PREFERENCE_CATEGORIES {
+    for (index, category) in PREFERENCE_CATEGORIES.iter().enumerate() {
         let is_active = category.id == active;
         let view = view.clone();
         let category_id = category.id;
+        let focus = category_focus
+            .get(index)
+            .cloned()
+            .expect("one focus handle per category");
         list = list.child(
             div()
                 .id(SharedString::from(format!("pref-shell-category-{category_id}")))
+                .track_focus(&focus)
+                .focus_visible(|style| style.border_color(rgb(ACCENT)))
                 .relative()
                 .flex()
                 .flex_row()
@@ -270,16 +295,36 @@ fn category_list(view: &Entity<PrefShellPane>, active: &str) -> impl IntoElement
                 .w_full()
                 .h(px(38.))
                 .pl(px(16.))
+                .border_1()
+                .border_color(rgb(PAGE))
                 .cursor_pointer()
                 .text_color(rgb(if is_active { ACTIVE } else { INK }))
                 .when(is_active, |style| style.bg(rgb(HOVER)))
                 .hover(|style| style.bg(rgb(HOVER)))
-                .on_click(move |_event, _window, app| {
-                    view.update(app, |pane, cx| {
-                        if let Some(target) = pane.model.navigate_for_category(category_id) {
-                            pane.navigate(target, cx);
+                .on_click({
+                    let view = view.clone();
+                    move |_event, _window, app| {
+                        view.update(app, |pane, cx| {
+                            if let Some(target) = pane.model.navigate_for_category(category_id) {
+                                pane.navigate(target, cx);
+                            }
+                        });
+                    }
+                })
+                .on_key_down({
+                    let view = view.clone();
+                    move |event, _window, app| {
+                        let plain = !event.keystroke.modifiers.modified();
+                        let key = event.keystroke.key.as_str();
+                        if plain && (key == "enter" || key == "space") {
+                            view.update(app, |pane, cx| {
+                                if let Some(target) = pane.model.navigate_for_category(category_id)
+                                {
+                                    pane.navigate(target, cx);
+                                }
+                            });
                         }
-                    });
+                    }
                 })
                 .child(
                     div()

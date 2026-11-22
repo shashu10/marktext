@@ -79,9 +79,10 @@ onMounted(() => {
   }
 
   & .pref-sidebar-host {
+    /* Override .gpui-pane-host { flex: 1 } so the sidebar stays 220px. */
+    flex: 0 0 var(--prefSideBarWidth);
     width: var(--prefSideBarWidth);
     height: 100vh;
-    flex-shrink: 0;
     box-sizing: border-box;
   }
 

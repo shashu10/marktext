@@ -395,6 +395,18 @@ watch(() => preferences.$state, () => {
   if (!model.value.showFrame) return
   sendSnapshot()
 }, { deep: true })
+
+watch(() => keybindings.commands, () => {
+  if (!model.value.showFrame || props.pane !== 'sidebar') return
+  post({
+    type: 'KEYBINDINGS',
+    commands: keybindingCommandsPayload(),
+    isMac,
+    showDebug: Boolean(window.marktext?.env?.debug),
+    loading: keybindings.loading,
+    loadError: keybindings.loadError
+  })
+}, { deep: true })
 </script>
 
 <style scoped>
