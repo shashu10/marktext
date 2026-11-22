@@ -38,6 +38,7 @@
     "check": "pnpm lint && pnpm typecheck",
     "gen-third-party": "tsx scripts/generateThirdPartyLicense.ts",
     "validate-licenses": "tsx scripts/validateLicenses.ts",
+    "migration:progress": "node --no-warnings scripts/migration-progress.ts",
     "prepare": "husky"
   },
   "lint-staged": {

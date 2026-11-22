@@ -319,8 +319,8 @@ This fork is executing a **Strangler-Fig Electron → Rust (GPUI)** migration wh
 2. **Capture "Before" baseline FIRST:** Build untouched legacy app and record startup/pane latency, Main+Renderer RSS memory, 5s idle CPU %, bundle size, and a Before screenshot in `/tmp/` (never commit PNGs to git).
 3. **Open a Draft PR early:** Push the `STATUS.md` claim and open a Draft PR (`--draft --base develop --label migration`) containing the **Before baseline table** and **Tentative Implementation Plan** so measurements survive context compaction and lock the slice.
 4. **Implement behind feature flag:** Build the Rust GPUI crate against `HostBridge` + `gpui-ce` (`default-features = false`), keep `prod` on `legacy`, and add Rust + IPC parity tests.
-5. **Verify & capture "After" metrics:** Run `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `cargo test`, `cargo clippy`, `wasm32` build, repeat the exact same measurements + After screenshot, and verify `flag=legacy` rollback.
-6. **Finalize PR & request human review:** Fill in **Planned vs. Actually Implemented**, **Before vs. After scorecard** (honestly distinguishing Stage 1 WASM overhead guardrails vs. Stage 2 native ROI), and screenshot artifact links; run `gh pr ready`, tag **`@shashu10`**, and **never self-merge**.
+5. **Verify & capture "After" metrics:** Run `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `cargo test`, `cargo clippy`, `wasm32` build, repeat the exact same measurements + After screenshot, verify `flag=legacy` rollback, and run `pnpm migration:progress --slice <slice-id>` to compute the exact `% migrated` delta (superseded legacy TS/Vue LOC ÷ total legacy TS/Vue LOC).
+6. **Finalize PR & request human review:** Fill in **Planned vs. Actually Implemented**, **Before vs. After scorecard** (honestly distinguishing Stage 1 WASM overhead guardrails vs. Stage 2 native ROI), the **`pnpm migration:progress` table**, and screenshot artifact links; run `gh pr ready`, tag **`@shashu10`**, and **never self-merge**.
 
 **Key Migration Invariants for All Agents:**
 
