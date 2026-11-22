@@ -110,7 +110,11 @@ xvfb-run --auto-servernum pnpm migration:measure \
   --compare /tmp/<slice-id>-before.json
 ```
 
-Also run a **rollback sanity check** with `--flag legacy` to confirm instant safe rollback.
+Also run a **rollback sanity check** with `--flag legacy` to confirm instant safe rollback, and generate the **Migration % Progress table** (legacy TypeScript/Vue LOC superseded ÷ total legacy TS/Vue LOC, plus per-surface and Rust LOC breakdown):
+
+```bash
+pnpm migration:progress --slice <slice-id>
+```
 
 ### Honest Stage 1 vs. Stage 2 Performance Interpretation
 
@@ -170,6 +174,10 @@ Also run a **rollback sanity check** with `--flag legacy` to confirm instant saf
 | Renderer / WASM / Native Size (MB) |                              |                  |       |                        |
 | Visual Diff vs. Legacy (%)         |                           0% |                  |       |                        |
 | Functional Parity & Rollback Check |                         pass |                  |       | `flag=legacy` verified |
+
+## Migration Progress (% of Legacy TS/Vue Superseded)
+
+<!-- Paste output of: pnpm migration:progress --slice <slice-id> -->
 
 ## AI SDLC Run Telemetry
 

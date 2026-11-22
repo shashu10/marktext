@@ -1,0 +1,346 @@
+{
+  "legacyRoots": ["packages/desktop/src", "packages/muya/src"],
+  "rustRoots": ["rust/crates"],
+  "legacyExtensions": [".ts", ".vue", ".js", ".css"],
+  "rustExtensions": [".rs"],
+  "surfaces": {
+    "preferences": {
+      "label": "Preferences Window",
+      "paths": [
+        "packages/desktop/src/renderer/src/prefComponents",
+        "packages/desktop/src/renderer/src/pages/preference.vue",
+        "packages/desktop/src/main/windows/setting.ts"
+      ]
+    },
+    "editor-ui": {
+      "label": "Main Editor UI (Chrome, Sidebars & Dialogs)",
+      "paths": [
+        "packages/desktop/src/renderer/src/components",
+        "packages/desktop/src/renderer/src/pages/app.vue"
+      ]
+    },
+    "main-services": {
+      "label": "Electron Main Process Services",
+      "paths": ["packages/desktop/src/main"]
+    },
+    "editor-core": {
+      "label": "Muya WYSIWYG Core (@muyajs/core)",
+      "paths": ["packages/muya/src"]
+    }
+  },
+  "slices": [
+    {
+      "id": "A1",
+      "name": "Preferences — General Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.general",
+      "rustCrate": "rust/crates/mt-pref-general",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/prefComponents/general/index.vue",
+        "packages/desktop/src/renderer/src/prefComponents/general/config.ts",
+        "packages/desktop/src/renderer/src/prefComponents/general/excludePatterns.vue",
+        "packages/desktop/src/renderer/src/prefComponents/general/pandoc.ts"
+      ]
+    },
+    {
+      "id": "A2",
+      "name": "Preferences — Appearance & Theme Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.appearance",
+      "rustCrate": "rust/crates/mt-pref-appearance",
+      "legacyPaths": ["packages/desktop/src/renderer/src/prefComponents/theme"]
+    },
+    {
+      "id": "A3",
+      "name": "Preferences — Editor & Spellchecker Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.editor",
+      "rustCrate": "rust/crates/mt-pref-editor",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/prefComponents/editor",
+        "packages/desktop/src/renderer/src/prefComponents/spellchecker"
+      ]
+    },
+    {
+      "id": "A4",
+      "name": "Preferences — Files & Startup/Recovery Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.files",
+      "rustCrate": "rust/crates/mt-pref-files",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/prefComponents/general/recoverySettings.vue"
+      ]
+    },
+    {
+      "id": "A5",
+      "name": "Preferences — Markdown & Diagrams Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.markdown",
+      "rustCrate": "rust/crates/mt-pref-markdown",
+      "legacyPaths": ["packages/desktop/src/renderer/src/prefComponents/markdown"]
+    },
+    {
+      "id": "A6",
+      "name": "Preferences — Images & Uploader Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.images",
+      "rustCrate": "rust/crates/mt-pref-images",
+      "legacyPaths": ["packages/desktop/src/renderer/src/prefComponents/image"]
+    },
+    {
+      "id": "A7",
+      "name": "Preferences — Keybindings & Shortcut Recorder Pane",
+      "surface": "preferences",
+      "flag": "prefs.pane.keybindings",
+      "rustCrate": "rust/crates/mt-pref-keybindings",
+      "legacyPaths": ["packages/desktop/src/renderer/src/prefComponents/keybindings"]
+    },
+    {
+      "id": "A8",
+      "name": "Preferences — Sidebar, Registry & Shared Controls",
+      "surface": "preferences",
+      "flag": "prefs.sidebar",
+      "rustCrate": "rust/crates/mt-pref-shell",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/prefComponents/sideBar",
+        "packages/desktop/src/renderer/src/prefComponents/common",
+        "packages/desktop/src/renderer/src/prefComponents/categories.ts",
+        "packages/desktop/src/renderer/src/prefComponents/categoryPage.vue",
+        "packages/desktop/src/renderer/src/prefComponents/registry.ts",
+        "packages/desktop/src/renderer/src/prefComponents/settingLocation.ts"
+      ]
+    },
+    {
+      "id": "W2.A",
+      "name": "Preferences Window — Full Native GPUI Flip",
+      "surface": "preferences",
+      "flag": "window.preferences",
+      "rustCrate": "rust/crates/mt-pref-app",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/pages/preference.vue",
+        "packages/desktop/src/main/windows/setting.ts"
+      ]
+    },
+    {
+      "id": "B1",
+      "name": "About Dialog",
+      "surface": "editor-ui",
+      "flag": "dialog.about",
+      "rustCrate": "rust/crates/mt-dialog-about",
+      "legacyPaths": ["packages/desktop/src/renderer/src/components/about"]
+    },
+    {
+      "id": "B2",
+      "name": "Document Statistics Popover",
+      "surface": "editor-ui",
+      "flag": "panel.docStats",
+      "rustCrate": "rust/crates/mt-panel-doc-stats",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/titleBar/documentStatistics.vue",
+        "packages/desktop/src/renderer/src/components/titleBar/documentStatisticsFormat.ts",
+        "packages/desktop/src/renderer/src/components/titleBar/documentStatisticsPersistence.ts"
+      ]
+    },
+    {
+      "id": "B3",
+      "name": "Outline / TOC Panel",
+      "surface": "editor-ui",
+      "flag": "panel.outlineToc",
+      "rustCrate": "rust/crates/mt-panel-toc",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/editorWithTabs/outline.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/toc.vue",
+        "packages/desktop/src/renderer/src/util/tocKeys.ts",
+        "packages/desktop/src/renderer/src/util/tocNavigation.ts",
+        "packages/desktop/src/renderer/src/util/sourceModeToc.ts",
+        "packages/desktop/src/renderer/src/util/findActiveHeading.ts"
+      ]
+    },
+    {
+      "id": "B4",
+      "name": "Rename & Import Dialogs",
+      "surface": "editor-ui",
+      "flag": "dialog.renameImport",
+      "rustCrate": "rust/crates/mt-dialog-file-ops",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/rename",
+        "packages/desktop/src/renderer/src/components/import"
+      ]
+    },
+    {
+      "id": "B5",
+      "name": "Export Settings Dialog",
+      "surface": "editor-ui",
+      "flag": "dialog.exportSettings",
+      "rustCrate": "rust/crates/mt-dialog-export",
+      "legacyPaths": ["packages/desktop/src/renderer/src/components/exportSettings"]
+    },
+    {
+      "id": "B6",
+      "name": "Command Palette",
+      "surface": "editor-ui",
+      "flag": "dialog.commandPalette",
+      "rustCrate": "rust/crates/mt-command-palette",
+      "legacyPaths": ["packages/desktop/src/renderer/src/components/commandPalette"]
+    },
+    {
+      "id": "C1",
+      "name": "Title Bar",
+      "surface": "editor-ui",
+      "flag": "chrome.titleBar",
+      "rustCrate": "rust/crates/mt-chrome-titlebar",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/titleBar/index.vue",
+        "packages/desktop/src/renderer/src/components/titleBar/pathBreadcrumb.ts",
+        "packages/desktop/src/renderer/src/components/titleBar/windowTitle.ts"
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Tab Bar",
+      "surface": "editor-ui",
+      "flag": "chrome.tabBar",
+      "rustCrate": "rust/crates/mt-chrome-tabs",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/editorWithTabs/tabs.vue",
+        "packages/desktop/src/renderer/src/components/useTabReorder.ts"
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Left Sidebar — File Tree & Opened Files",
+      "surface": "editor-ui",
+      "flag": "sidebar.files",
+      "rustCrate": "rust/crates/mt-sidebar-files",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/sideBar/index.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/tree.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/treeFile.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/treeFolder.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/treeOpenedTab.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/useTreeDragDrop.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/useOpenedFilesResize.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/rowRegistry.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/renameKey.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/trashKey.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/fileIconClass.ts",
+        "packages/desktop/src/renderer/src/components/sideBar/icon.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/types.ts"
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Left Sidebar — Ripgrep Global Search",
+      "surface": "editor-ui",
+      "flag": "sidebar.search",
+      "rustCrate": "rust/crates/mt-sidebar-search",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/sideBar/search.vue",
+        "packages/desktop/src/renderer/src/components/sideBar/searchResultItem.vue"
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "In-Document Find & Replace Bar",
+      "surface": "editor-ui",
+      "flag": "panel.findReplace",
+      "rustCrate": "rust/crates/mt-panel-find",
+      "legacyPaths": ["packages/desktop/src/renderer/src/components/search"]
+    },
+    {
+      "id": "C6",
+      "name": "Recent Screen, MediaViewer & Tab Notifications",
+      "surface": "editor-ui",
+      "flag": "chrome.misc",
+      "rustCrate": "rust/crates/mt-chrome-misc",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/recent",
+        "packages/desktop/src/renderer/src/components/mediaViewer",
+        "packages/desktop/src/renderer/src/components/loading",
+        "packages/desktop/src/renderer/src/components/iconTooltip",
+        "packages/desktop/src/renderer/src/components/icons",
+        "packages/desktop/src/renderer/src/components/editorWithTabs/notifications.vue"
+      ]
+    },
+    {
+      "id": "D1",
+      "name": "Main Process Services",
+      "surface": "main-services",
+      "flag": "core.services",
+      "rustCrate": "rust/crates/marktext-core",
+      "legacyPaths": ["packages/desktop/src/main"]
+    },
+    {
+      "id": "D2",
+      "name": "Source Code Editor (replaces CodeMirror 5)",
+      "surface": "editor-ui",
+      "flag": "editor.sourceCode",
+      "rustCrate": "rust/crates/mt-editor-source",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/components/editorWithTabs/sourceCode.vue",
+        "packages/desktop/src/renderer/src/components/editorWithTabs/syntheticHistory.ts"
+      ]
+    },
+    {
+      "id": "D3a",
+      "name": "Muya — Parser / AST & Inline Engine",
+      "surface": "editor-core",
+      "flag": "editor.muya.parser",
+      "rustCrate": "rust/crates/mt-muya-parser",
+      "legacyPaths": [
+        "packages/muya/src/inline",
+        "packages/muya/src/state",
+        "packages/muya/src/utils/marked"
+      ]
+    },
+    {
+      "id": "D3b",
+      "name": "Muya — Block Layout, Folding & Selection/Undo",
+      "surface": "editor-core",
+      "flag": "editor.muya.layout",
+      "rustCrate": "rust/crates/mt-muya-layout",
+      "legacyPaths": [
+        "packages/muya/src/block",
+        "packages/muya/src/editor",
+        "packages/muya/src/selection",
+        "packages/muya/src/history"
+      ]
+    },
+    {
+      "id": "D3c",
+      "name": "Muya — Rich Blocks (Math, Diagrams, Highlight)",
+      "surface": "editor-core",
+      "flag": "editor.muya.rich",
+      "rustCrate": "rust/crates/mt-muya-rich",
+      "legacyPaths": ["packages/muya/src/utils/diagram", "packages/muya/src/utils/prism"]
+    },
+    {
+      "id": "D3d",
+      "name": "Muya — Remaining Core & Editor Host",
+      "surface": "editor-core",
+      "flag": "editor.muya.polish",
+      "rustCrate": "rust/crates/mt-muya-host",
+      "legacyPaths": [
+        "packages/muya/src",
+        "packages/desktop/src/renderer/src/components/editorWithTabs/editor.vue",
+        "packages/desktop/src/renderer/src/components/editorWithTabs/index.vue"
+      ]
+    },
+    {
+      "id": "W4",
+      "name": "Main Editor Window — Full Native GPUI Flip",
+      "surface": "editor-ui",
+      "flag": "window.main",
+      "rustCrate": "rust/crates/mt-app",
+      "legacyPaths": [
+        "packages/desktop/src/renderer/src/pages/app.vue",
+        "packages/desktop/src/renderer/src/store",
+        "packages/desktop/src/renderer/src/services",
+        "packages/desktop/src/renderer/src/util",
+        "packages/desktop/src/renderer/src/router",
+        "packages/desktop/src/preload",
+        "packages/desktop/src/shared"
+      ]
+    }
+  ]
+}
