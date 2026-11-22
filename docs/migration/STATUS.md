@@ -20,16 +20,16 @@
 
 ## Wave 1A — Preferences Window Panes (Parallel Cloud Agents)
 
-| Slice ID | Preference Pane                     | Feature Flag Key         | Prerequisites | Legacy Source                                            | Target Rust Crate                 | Status        |
-| -------- | ----------------------------------- | ------------------------ | ------------- | -------------------------------------------------------- | --------------------------------- | ------------- |
-| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review`   |
-| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `todo`        |
-| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `todo`        |
-| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `todo`        |
-| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-progress` |
-| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo`        |
-| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `todo`        |
-| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `todo`        |
+| Slice ID | Preference Pane                     | Feature Flag Key         | Prerequisites | Legacy Source                                            | Target Rust Crate                 | Status      |
+| -------- | ----------------------------------- | ------------------------ | ------------- | -------------------------------------------------------- | --------------------------------- | ----------- |
+| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review` |
+| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `todo`      |
+| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `todo`      |
+| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `todo`      |
+| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-review` |
+| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo`      |
+| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `todo`      |
+| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `todo`      |
 
 ---
 
