@@ -40,6 +40,15 @@ export const paneHostModel = (flagKey: string, input: FlagResolutionInput = {}):
   return { mode, presentation: 'wasm', showLegacy: false, showFrame: true }
 }
 
+export const isGuestReady = (message: unknown): boolean =>
+  isRecord(message) && message.type === 'READY'
+
+export const paneChangedName = (message: unknown): string | null => {
+  if (!isRecord(message) || message.type !== 'PANE_CHANGED' || typeof message.pane !== 'string') return null
+  if (!message.pane) return null
+  return message.pane
+}
+
 export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   if (!isRecord(message) || typeof message.type !== 'string') return null
   if (message.type === 'SET_PREFERENCE' && typeof message.key === 'string') {

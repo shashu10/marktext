@@ -5,6 +5,7 @@ mod bridge;
 mod messages;
 mod preferences;
 mod router;
+mod session;
 mod tokens;
 
 pub use bridge::{HostBridge, MemoryHostBridge};
@@ -13,4 +14,5 @@ pub use preferences::{
     PreferencesPatch, PreferencesSnapshot, is_known_preference_key, preference_defaults,
 };
 pub use router::PaneRouter;
+pub use session::GuestSession;
 pub use tokens::{ThemeTokens, category_label, theme_tokens};

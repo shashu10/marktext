@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use serde_json::Value;
@@ -44,6 +45,35 @@ impl MemoryHostBridge {
     pub fn reading_mode(&self) -> Vec<bool> {
         self.reading_mode.lock().expect("reading-mode lock").clone()
     }
+
+    /// Host transport: install a full snapshot, then tell subscribers what changed.
+    pub fn replace_known(&self, incoming: &BTreeMap<String, Value>) {
+        let patch = self
+            .snapshot
+            .lock()
+            .expect("preference lock")
+            .replace_known(incoming);
+        self.notify(patch);
+    }
+
+    /// Host transport: apply a partial update from `PREFERENCE_PATCH`.
+    pub fn apply_changes(&self, changes: &BTreeMap<String, Value>) {
+        let patch = self
+            .snapshot
+            .lock()
+            .expect("preference lock")
+            .apply_known(changes);
+        self.notify(patch);
+    }
+
+    fn notify(&self, patch: PreferencesPatch) {
+        if patch.changes.is_empty() {
+            return;
+        }
+        for listener in self.listeners.lock().expect("listener lock").iter() {
+            listener(patch.clone());
+        }
+    }
 }
 
 impl HostBridge for MemoryHostBridge {
@@ -60,9 +90,7 @@ impl HostBridge for MemoryHostBridge {
         else {
             return;
         };
-        for listener in self.listeners.lock().expect("listener lock").iter() {
-            listener(patch.clone());
-        }
+        self.notify(patch);
     }
 
     fn subscribe_preferences(&self, on_patch: Box<dyn Fn(PreferencesPatch) + Send>) {

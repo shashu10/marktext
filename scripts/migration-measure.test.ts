@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareReports, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
+import { compareReports, isPanePainted, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
 
 const report = (phase: MeasureReport['phase'], startup: number, memory: number): MeasureReport => ({
   slice: 'A1',
@@ -36,6 +36,25 @@ test('preference slices open their settings category', () => {
   assert.equal(settingsCategoryForSlice({ id: 'A1', flag: 'prefs.pane.general' }), 'general')
   assert.equal(settingsCategoryForSlice({ id: 'A8', flag: 'prefs.sidebar' }), 'general')
   assert.equal(settingsCategoryForSlice({ id: 'B1', flag: 'dialog.about' }), null)
+})
+
+test('pane latency waits for a painted legacy page or a ready wasm canvas', () => {
+  assert.equal(isPanePainted({
+    visibleFrames: [],
+    legacy: { width: 640, height: 480, textLength: 12 }
+  }), true)
+  assert.equal(isPanePainted({
+    visibleFrames: [],
+    legacy: { width: 640, height: 480, textLength: 0 }
+  }), false)
+  assert.equal(isPanePainted({
+    visibleFrames: [{ paneReady: null, canvasWidth: 0, canvasHeight: 0 }],
+    legacy: null
+  }), false)
+  assert.equal(isPanePainted({
+    visibleFrames: [{ paneReady: 'general', canvasWidth: 650, canvasHeight: 567 }],
+    legacy: null
+  }), true)
 })
 
 test('compareReports subtracts the legacy baseline', () => {

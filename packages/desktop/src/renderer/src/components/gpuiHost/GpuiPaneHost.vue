@@ -1,7 +1,14 @@
 <template>
-  <slot v-if="model.showLegacy && !model.showFrame" />
+  <slot v-if="model.showLegacy && !model.showFrame && !hasFallthrough" />
+  <div
+    v-else-if="model.showLegacy && !model.showFrame"
+    v-bind="attrs"
+  >
+    <slot />
+  </div>
   <div
     v-else
+    v-bind="attrs"
     class="gpui-pane-host"
     :class="{ 'is-shadow': model.mode === 'shadow', 'is-native': model.presentation === 'native' }"
     :data-flag="flagKey"
@@ -21,16 +28,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { usePreferencesStore } from '@/store/preferences'
 import { useEditorStore } from '@/store/editor'
 import bus from '@/bus'
-import { frameMessageToCommand, paneHostModel } from './protocol'
+import { frameMessageToCommand, isGuestReady, paneChangedName, paneHostModel } from './protocol'
+
+// router-view's class is the preferences scroll container. A bare slot drops
+// it, so fallthrough attrs are placed on an element when the parent sent any.
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps<{
   flagKey: string
   pane: string
 }>()
+
+const attrs = useAttrs()
+const hasFallthrough = computed(() => Object.keys(attrs).length > 0)
 
 const frame = ref<HTMLIFrameElement | null>(null)
 const preferences = usePreferencesStore()
@@ -59,6 +73,16 @@ const sendSnapshot = (): void => {
 
 const onWindowMessage = (event: MessageEvent): void => {
   if (event.source !== frame.value?.contentWindow) return
+  // The measure harness waits for this attribute and a sized canvas. The
+  // settings document's DOMContentLoaded fires before either exists.
+  const readyPane = paneChangedName(event.data)
+  if (readyPane) frame.value?.setAttribute('data-pane-ready', readyPane)
+  // iframe `load` fires before wasm finishes installing its listener, so the
+  // first SET_PANE is lost. READY means the guest can accept the pane now.
+  if (isGuestReady(event.data)) {
+    post({ type: 'SET_PANE', pane: props.pane })
+    sendSnapshot()
+  }
   const command = frameMessageToCommand(event.data)
   if (!command) return
   if (command.type === 'set-preference') {
@@ -77,6 +101,7 @@ const onWindowMessage = (event: MessageEvent): void => {
 }
 
 const hello = (): void => {
+  frame.value?.removeAttribute('data-pane-ready')
   post({ type: 'HOST_HELLO' })
   post({ type: 'SET_PANE', pane: props.pane })
   sendSnapshot()
@@ -91,6 +116,7 @@ onBeforeUnmount(() => {
 })
 
 watch(() => props.pane, (pane) => {
+  frame.value?.removeAttribute('data-pane-ready')
   post({ type: 'SET_PANE', pane })
 })
 
@@ -105,7 +131,6 @@ watch(() => preferences.$state, () => {
   display: flex;
   flex: 1;
   min-height: 0;
-  height: 100%;
 }
 .gpui-pane-frame {
   flex: 1;

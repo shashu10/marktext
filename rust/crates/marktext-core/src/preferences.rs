@@ -39,6 +39,42 @@ impl PreferencesSnapshot {
         changes.insert(key, value);
         Some(PreferencesPatch { changes })
     }
+
+    pub fn text(&self, key: &str) -> Option<&str> {
+        self.values.get(key).and_then(Value::as_str)
+    }
+
+    /// Full snapshot from the host. Unknown keys are dropped. Missing keys
+    /// return to the schema default. The patch lists values that actually changed.
+    pub fn replace_known(&mut self, incoming: &BTreeMap<String, Value>) -> PreferencesPatch {
+        let mut next = preference_defaults();
+        for (key, value) in incoming {
+            let _ = next.insert_known(key.clone(), value.clone());
+        }
+        let mut changes = BTreeMap::new();
+        for key in self.values.keys().chain(next.values.keys()) {
+            if changes.contains_key(key) {
+                continue;
+            }
+            if self.values.get(key) != next.values.get(key)
+                && let Some(value) = next.values.get(key)
+            {
+                changes.insert(key.clone(), value.clone());
+            }
+        }
+        *self = next;
+        PreferencesPatch { changes }
+    }
+
+    pub fn apply_known(&mut self, changes: &BTreeMap<String, Value>) -> PreferencesPatch {
+        let mut patch = BTreeMap::new();
+        for (key, value) in changes {
+            if let Some(one) = self.insert_known(key.clone(), value.clone()) {
+                patch.extend(one.changes);
+            }
+        }
+        PreferencesPatch { changes: patch }
+    }
 }
 
 fn schema() -> &'static Map<String, Value> {

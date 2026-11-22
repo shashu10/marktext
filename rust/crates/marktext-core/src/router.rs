@@ -29,8 +29,9 @@ impl PaneRouter {
                 self.active.clone_from(pane);
                 Some(GuestToHost::PaneChanged { pane: pane.clone() })
             }
-            HostToGuest::Preferences { .. } => Some(GuestToHost::PreferencesApplied),
-            HostToGuest::PreferencePatch { .. } => Some(GuestToHost::PreferencesApplied),
+            // Preference payloads belong to `GuestSession`. Acknowledging them
+            // here would report success without storing anything.
+            HostToGuest::Preferences { .. } | HostToGuest::PreferencePatch { .. } => None,
         }
     }
 }
@@ -61,5 +62,12 @@ mod tests {
             }
         );
         assert_eq!(router.active(), "editor");
+        assert!(
+            router
+                .handle(&HostToGuest::Preferences {
+                    snapshot: std::collections::BTreeMap::new(),
+                })
+                .is_none()
+        );
     }
 }

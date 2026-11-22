@@ -8,7 +8,7 @@ import {
   parseFlagOverrides,
   flagKeyForPreferenceCategory
 } from '@shared/flags'
-import { frameMessageToCommand, paneHostModel } from '@/components/gpuiHost/protocol'
+import { frameMessageToCommand, isGuestReady, paneChangedName, paneHostModel } from '@/components/gpuiHost/protocol'
 
 interface SliceManifest {
   slices: Array<{ flag: string }>
@@ -91,6 +91,10 @@ describe('GpuiPaneHost protocol', () => {
       readOnly: true
     })
     expect(frameMessageToCommand({ type: 'READY', pane: 'general' })).toBeNull()
+    expect(isGuestReady({ type: 'READY', pane: null })).toBe(true)
+    expect(paneChangedName({ type: 'PANE_CHANGED', pane: 'general' })).toBe('general')
+    expect(paneChangedName({ type: 'READY', pane: 'general' })).toBeNull()
+    expect(paneChangedName({ type: 'PANE_CHANGED', pane: '' })).toBeNull()
     expect(frameMessageToCommand(null)).toBeNull()
   })
 })
