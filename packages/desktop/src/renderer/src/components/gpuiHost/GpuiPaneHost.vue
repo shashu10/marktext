@@ -29,12 +29,15 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { usePreferencesStore } from '@/store/preferences'
 import { useEditorStore } from '@/store/editor'
 import { useKeybindingsStore } from '@/store/keybindings'
 import { isMac } from '@/util'
 import bus from '@/bus'
 import { SpellChecker } from '@/spellchecker'
+import { openSetting } from '@/prefComponents/settingLocation'
+import { getCategory } from '@/prefComponents/sideBar/config'
 import { frameMessageToCommand, isGuestReady, paneChangedName, paneHostModel } from './protocol'
 
 // router-view's class is the preferences scroll container. A bare slot drops
@@ -52,6 +55,8 @@ const hasFallthrough = computed(() => Object.keys(attrs).length > 0)
 const frame = ref<HTMLIFrameElement | null>(null)
 const preferences = usePreferencesStore()
 const keybindings = useKeybindingsStore()
+const route = useRoute()
+const router = useRouter()
 
 const migrationInput = (): { devBuild: boolean; overrideEnvironment?: string; overridesRaw?: string } => {
   const env = window.process?.env
@@ -134,6 +139,16 @@ const runHostAction = async (id: number, action: string, payload: unknown): Prom
       const executable = await window.fileUtils.isExecutable(body.path)
       status = 'ok'
       result = { path: body.path, executable }
+    } else if (action === 'navigate-preference' && typeof body.category === 'string') {
+      const category = body.category
+      const settingKey = typeof body.key === 'string' ? body.key : undefined
+      if (settingKey) {
+        await openSetting(router, category, settingKey)
+      } else {
+        await router.push({ path: `/preference/${category}` })
+      }
+      status = 'ok'
+      result = { category, ...(settingKey ? { key: settingKey } : {}) }
     }
   } catch (error) {
     status = 'failed'
@@ -204,7 +219,7 @@ const keybindingCommandsPayload = () => keybindings.commands.map(command => ({
 }))
 
 const sendKeybindings = async (): Promise<void> => {
-  if (props.pane !== 'keybindings') return
+  if (props.pane !== 'keybindings' && props.pane !== 'sidebar') return
   post({
     type: 'KEYBINDINGS',
     commands: [],
@@ -222,6 +237,12 @@ const sendKeybindings = async (): Promise<void> => {
     loading: keybindings.loading,
     loadError: keybindings.loadError
   })
+}
+
+const sendActiveCategory = (): void => {
+  if (props.pane !== 'sidebar') return
+  const category = typeof route.name === 'string' ? route.name : 'general'
+  post({ type: 'ACTIVE_CATEGORY', category })
 }
 
 const saveKeybinding = async (id: number, commandId: string, accelerator: string): Promise<void> => {
@@ -273,6 +294,7 @@ const onWindowMessage = (event: MessageEvent): void => {
     post({ type: 'SET_PANE', pane: props.pane })
     sendSnapshot()
     void sendKeybindings()
+    sendActiveCategory()
   }
   const command = frameMessageToCommand(event.data)
   if (!command) return
@@ -332,14 +354,28 @@ const hello = (): void => {
   post({ type: 'SET_PANE', pane: props.pane })
   sendSnapshot()
   void sendKeybindings()
+  sendActiveCategory()
 }
+
+const onIpcCategoryChange = (_event: unknown, category: unknown): void => {
+  if (props.pane !== 'sidebar' || typeof category !== 'string') return
+  const target = getCategory().find(item => item.label === category)
+  if (target) void router.push({ path: target.path })
+}
+
+let stopCategoryListener: (() => void) | null = null
 
 onMounted(() => {
   window.addEventListener('message', onWindowMessage)
+  if (props.pane === 'sidebar') {
+    stopCategoryListener = window.electron.ipcRenderer.on('settings::change-tab', onIpcCategoryChange)
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', onWindowMessage)
+  stopCategoryListener?.()
+  stopCategoryListener = null
 })
 
 watch(() => props.pane, (pane) => {
@@ -347,6 +383,12 @@ watch(() => props.pane, (pane) => {
   post({ type: 'SET_PANE', pane })
   void sendSpellcheckerInfo()
   void sendKeybindings()
+  sendActiveCategory()
+})
+
+watch(() => route.name, () => {
+  if (!model.value.showFrame) return
+  sendActiveCategory()
 })
 
 watch(() => preferences.$state, () => {
