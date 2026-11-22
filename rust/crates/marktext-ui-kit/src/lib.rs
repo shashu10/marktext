@@ -10,8 +10,15 @@ use gpui::{
     App, ClickEvent, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window,
     div, prelude::*, px, rgb,
 };
+use gpui_components::Sizable;
+use gpui_components::button::{Button, ButtonVariants};
+use gpui_components::switch::Switch;
 use gpui_elements::editable_text::text_input;
-use gpui_elements::switch::BaseSwitch;
+
+/// Loads the component theme. Call once at startup, before the first control paints.
+pub fn init(cx: &mut App) {
+    gpui_components::init(cx);
+}
 
 /// Family name in the Liberation Sans name table. The web canvas has no
 /// `.SystemUIFont`, so every control names this face explicitly.
@@ -19,7 +26,6 @@ pub const UI_FONT: &str = "Liberation Sans";
 
 const TRACK: u32 = 0x2A_2A_2E;
 const INK: u32 = 0xF4_F4_F5;
-const ACCENT: u32 = 0x4C_9A_FF;
 const MUTED: u32 = 0xA1_A1_AA;
 
 pub fn setting_row(label: impl Into<SharedString>, control: impl IntoElement) -> impl IntoElement {
@@ -39,20 +45,41 @@ pub fn toggle(
     id: impl Into<gpui::ElementId>,
     checked: bool,
     on_change: impl Fn(bool, &mut Window, &mut App) + 'static,
-) -> BaseSwitch {
-    BaseSwitch::new(id)
+) -> Switch {
+    Switch::new(id)
         .checked(checked)
         .on_change(move |next, window, app| on_change(*next, window, app))
-        .with_state(|row, checked, _disabled| {
-            row.font_family(UI_FONT)
-                .w(px(72.))
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if checked { ACCENT } else { TRACK }))
-                .text_color(rgb(INK))
-                .child(if checked { "On" } else { "Off" })
-        })
+}
+
+pub fn choice_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    selected: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Button {
+    let button = if selected {
+        Button::new(id).primary()
+    } else {
+        Button::new(id).secondary()
+    };
+    button
+        .small()
+        .font_family(UI_FONT)
+        .label(label)
+        .on_click(on_click)
+}
+
+pub fn action_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Button {
+    Button::new(id)
+        .small()
+        .font_family(UI_FONT)
+        .label(label)
+        .primary()
+        .on_click(on_click)
 }
 
 pub fn text_field(
@@ -90,20 +117,14 @@ pub fn select_control(
         let active = value == selected;
         let choose = Rc::clone(&on_change);
         let choice = value.clone();
-        row = row.child(
-            div()
-                .id(SharedString::from(format!("{id_prefix}-{index}")))
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(if active { ACCENT } else { TRACK }))
-                .text_color(rgb(INK))
-                .cursor_pointer()
-                .child(label)
-                .on_click(move |_event: &ClickEvent, window, app| {
-                    choose(choice.clone(), window, app);
-                }),
-        );
+        row = row.child(choice_button(
+            SharedString::from(format!("{id_prefix}-{index}")),
+            label,
+            active,
+            move |_event, window, app| {
+                choose(choice.clone(), window, app);
+            },
+        ));
     }
     row
 }
@@ -127,32 +148,26 @@ pub fn slider_control(
         .flex()
         .items_center()
         .gap_2()
-        .child(
-            div()
-                .id(SharedString::from(format!("{id}-dec")))
-                .px_2()
-                .cursor_pointer()
-                .child("−")
-                .on_click(move |_event, window, app| {
-                    decrease((value - step).clamp(min, max), window, app);
-                }),
-        )
+        .child(action_button(
+            SharedString::from(format!("{id}-dec")),
+            "−",
+            move |_event, window, app| {
+                decrease((value - step).clamp(min, max), window, app);
+            },
+        ))
         .child(
             div()
                 .min_w(px(48.))
                 .text_color(rgb(INK))
                 .child(format!("{value:.2}")),
         )
-        .child(
-            div()
-                .id(SharedString::from(format!("{id}-inc")))
-                .px_2()
-                .cursor_pointer()
-                .child("+")
-                .on_click(move |_event, window, app| {
-                    increase((value + step).clamp(min, max), window, app);
-                }),
-        )
+        .child(action_button(
+            SharedString::from(format!("{id}-inc")),
+            "+",
+            move |_event, window, app| {
+                increase((value + step).clamp(min, max), window, app);
+            },
+        ))
 }
 
 pub struct TreeNode {
