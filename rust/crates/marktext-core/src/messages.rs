@@ -28,6 +28,13 @@ pub enum HostToGuest {
     /// Answer to `PERSIST_PREFERENCE`. `status` is `persisted` or `failed`.
     #[serde(rename = "PREFERENCE_RESULT")]
     PreferenceResult { id: u64, status: String },
+    /// Answer to `HOST_ACTION` (probes, folder picker, open path/url, user-data).
+    #[serde(rename = "HOST_ACTION_RESULT")]
+    HostActionResult {
+        id: u64,
+        status: String,
+        payload: Value,
+    },
     /// Answer to `CHOOSE_DIRECTORY`. `path` is null when the dialog was cancelled.
     #[serde(rename = "DIRECTORY_CHOSEN")]
     DirectoryChosen { id: u64, path: Option<String> },
@@ -94,6 +101,15 @@ pub enum GuestToHost {
     ToggleReadingMode {
         #[serde(rename = "readOnly")]
         read_only: bool,
+    },
+    /// Ask Electron for a side effect that is not a preference write.
+    /// `action` is one of: `set-user-data`, `ask-image-folder`, `open-path`,
+    /// `open-external`, `probe-pandoc`, `probe-picgo`, `is-executable`.
+    #[serde(rename = "HOST_ACTION")]
+    HostAction {
+        id: u64,
+        action: String,
+        payload: Value,
     },
     /// Ask Electron to remove a personal dictionary word.
     #[serde(rename = "SPELLCHECKER_REMOVE_WORD")]

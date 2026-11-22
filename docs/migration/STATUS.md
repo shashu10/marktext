@@ -27,7 +27,7 @@
 | `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `in-review` |
 | `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `in-review` |
 | `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-review` |
-| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo`      |
+| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `in-review` |
 | `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `in-review` |
 | `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `todo`      |
 

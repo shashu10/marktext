@@ -12,6 +12,7 @@ use mt_pref_appearance::AppearancePane;
 use mt_pref_editor::EditorPane;
 use mt_pref_files::FilesPane;
 use mt_pref_general::GeneralPane;
+use mt_pref_images::ImagesPane;
 use mt_pref_keybindings::{KeybindingHostRequest, KeybindingsPane};
 use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
@@ -27,6 +28,7 @@ pub struct HostView {
     editor: gpui::Entity<EditorPane>,
     files: gpui::Entity<FilesPane>,
     markdown: gpui::Entity<MarkdownPane>,
+    images: gpui::Entity<ImagesPane>,
     keybindings: gpui::Entity<KeybindingsPane>,
 }
 
@@ -65,9 +67,17 @@ impl HostView {
         });
         let markdown = cx.new(|_cx| {
             MarkdownPane::new(
+                Arc::clone(&bridge),
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
+            )
+        });
+        let images = cx.new(|_cx| {
+            ImagesPane::new(
                 bridge,
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
+                Rc::new(publish_host_action),
             )
         });
         let keybindings = cx.new(|cx| KeybindingsPane::new(Rc::new(publish_keybinding), cx));
@@ -78,6 +88,7 @@ impl HostView {
             editor,
             files,
             markdown,
+            images,
             keybindings,
         }
     }
@@ -105,8 +116,24 @@ impl HostView {
                     self.markdown.update(cx, |pane, cx| {
                         pane.accept_persist_result(request_id, persisted, cx);
                     });
+                    self.images.update(cx, |pane, cx| {
+                        pane.accept_persist_result(request_id, persisted, cx);
+                    });
                 }
                 return None;
+            }
+            HostToGuest::HostActionResult { id, status, payload } => {
+                let request_id = *id;
+                self.images.update(cx, |pane, cx| {
+                    pane.accept_host_result(request_id, status, payload, cx);
+                });
+                return None;
+            }
+            HostToGuest::Preferences { snapshot } => {
+                self.sync_images_user_data(snapshot, cx);
+            }
+            HostToGuest::PreferencePatch { changes } => {
+                self.sync_images_user_data(changes, cx);
             }
             HostToGuest::DirectoryChosen { id, path } => {
                 let request_id = *id;
@@ -183,8 +210,19 @@ impl HostView {
         self.editor.update(cx, |_pane, cx| cx.notify());
         self.files.update(cx, |_pane, cx| cx.notify());
         self.markdown.update(cx, |_pane, cx| cx.notify());
+        self.images.update(cx, |_pane, cx| cx.notify());
         self.keybindings.update(cx, |_pane, cx| cx.notify());
         reply
+    }
+
+    fn sync_images_user_data(
+        &mut self,
+        snapshot: &std::collections::BTreeMap<String, Value>,
+        cx: &mut Context<Self>,
+    ) {
+        self.images.update(cx, |pane, cx| {
+            pane.sync_user_data(snapshot, cx);
+        });
     }
 }
 
@@ -197,6 +235,7 @@ impl Render for HostView {
             "editor" => self.editor.clone().into_any_element(),
             "files" => self.files.clone().into_any_element(),
             "markdown" => self.markdown.clone().into_any_element(),
+            "images" => self.images.clone().into_any_element(),
             "keybindings" => self.keybindings.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
@@ -301,6 +340,19 @@ pub fn publish_word_removal(id: u64, word: String) {
     #[cfg(not(target_family = "wasm"))]
     {
         let _ = (id, word);
+    }
+}
+
+pub fn publish_host_action(id: u64, action: String, payload: Value) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::HostAction {
+        id,
+        action,
+        payload,
+    });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = (id, action, payload);
     }
 }
 

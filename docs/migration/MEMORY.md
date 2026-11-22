@@ -45,3 +45,9 @@ The custom CSS box started empty and reported only the length of the saved style
 ## Labels that the bundled font cannot draw (A1)
 
 The canvas loads Liberation Sans only. A language name written in Chinese, Japanese, or Korean is invisible, which looks like a missing control rather than a font gap. Show an English label. The stored value stays the locale code, such as `zh-CN`.
+
+## Data-center keys never reach the preference bridge (A6)
+
+`imageFolderPath`, `currentUploader`, and `cliScript` arrive in the `PREFERENCES` snapshot from Pinia, but `MemoryHostBridge` only keeps keys from `schema.json`. The Images pane looked empty for the global folder even though Electron had a path.
+
+Keep those keys on the pane from the raw snapshot (`extract_user_data`). Write them with `HOST_ACTION` (`set-user-data`, `ask-image-folder`, probes, open path/url), not `SET_PREFERENCE`. Seed `EditableTextState` from the pane copy on first paint; an empty draft does not mean the host has no value.

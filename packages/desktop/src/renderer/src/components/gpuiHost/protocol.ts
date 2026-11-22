@@ -6,6 +6,7 @@ export type GuestMessage =
   | { type: 'PREFERENCES_APPLIED' }
   | { type: 'SET_PREFERENCE'; key: string; value: unknown }
   | { type: 'PERSIST_PREFERENCE'; id: number; key: string; value: unknown }
+  | { type: 'HOST_ACTION'; id: number; action: string; payload: unknown }
   | { type: 'CHOOSE_DIRECTORY'; id: number }
   | { type: 'SCROLL_TO_HEADER'; slug: string }
   | { type: 'TOGGLE_READING_MODE'; readOnly: boolean }
@@ -18,6 +19,7 @@ export type GuestMessage =
 export type HostCommand =
   | { type: 'set-preference'; key: string; value: unknown }
   | { type: 'persist-preference'; id: number; key: string; value: unknown }
+  | { type: 'host-action'; id: number; action: string; payload: unknown }
   | { type: 'choose-directory'; id: number }
   | { type: 'scroll-to-header'; slug: string }
   | { type: 'toggle-reading-mode'; readOnly: boolean }
@@ -75,6 +77,13 @@ export const frameMessageToCommand = (message: unknown): HostCommand | null => {
   ) {
     return { type: 'persist-preference', id: message.id, key: message.key, value: message.value }
   }
+  if (
+    message.type === 'HOST_ACTION' &&
+    typeof message.id === 'number' &&
+    typeof message.action === 'string'
+  ) {
+    return { type: 'host-action', id: message.id, action: message.action, payload: message.payload }
+  }
   if (message.type === 'CHOOSE_DIRECTORY' && typeof message.id === 'number') {
     return { type: 'choose-directory', id: message.id }
   }
@@ -123,6 +132,7 @@ export const isGuestMessage = (message: unknown): message is GuestMessage =>
     message.type === 'PREFERENCES_APPLIED' ||
     message.type === 'SET_PREFERENCE' ||
     message.type === 'PERSIST_PREFERENCE' ||
+    message.type === 'HOST_ACTION' ||
     message.type === 'CHOOSE_DIRECTORY' ||
     message.type === 'SCROLL_TO_HEADER' ||
     message.type === 'TOGGLE_READING_MODE' ||
