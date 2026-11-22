@@ -10,7 +10,9 @@ use marktext_core::{HostBridge, MemoryHostBridge};
 use marktext_ui_kit::{UI_FONT, select_control, toggle};
 use serde_json::Value;
 
-use crate::model::{Choice, GeneralModel, PersistDecision, PersistGate, string_array};
+use crate::model::{
+    Choice, GeneralModel, PersistDecision, PersistGate, draft_still_matches, string_array,
+};
 
 /// Called for every user edit. The wasm host posts `SET_PREFERENCE`; tests can record it.
 pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
@@ -56,12 +58,12 @@ impl GeneralPane {
         &mut self,
         key: &str,
         value: Value,
-        clear_draft: bool,
+        draft_text: Option<String>,
         cx: &mut Context<Self>,
     ) {
         let id = self
             .gate
-            .request(key.to_string(), value.clone(), clear_draft);
+            .request(key.to_string(), value.clone(), draft_text);
         if let Some(id) = id {
             (self.persist)(id, key.to_string(), value);
             cx.notify();
@@ -71,11 +73,13 @@ impl GeneralPane {
     pub fn accept_persist_result(&mut self, id: u64, persisted: bool, cx: &mut Context<Self>) {
         let decision = self.gate.finish(id, persisted);
         if let PersistDecision::Applied(pending) = decision {
+            let submitted = pending.draft_text.clone();
             self.bridge.set_preference(pending.key, pending.value);
-            if pending.clear_draft
-                && let Some(draft) = &self.draft
-            {
-                draft.update(cx, |state, cx| state.emplace("", cx));
+            if let Some(draft) = self.draft.clone() {
+                let current = draft.read(cx).as_str().to_string();
+                if draft_still_matches(submitted.as_deref(), &current) {
+                    draft.update(cx, |state, cx| state.emplace("", cx));
+                }
             }
         }
         cx.notify();
@@ -89,6 +93,7 @@ impl Render for GeneralPane {
             EditableTextState::use_keyed("setting-treePathExcludePatterns-draft", window, cx);
         self.draft = Some(draft.clone());
         let save_error = self.gate.save_error;
+        let saving = self.gate.is_busy();
         let view = cx.entity();
 
         div()
@@ -167,7 +172,7 @@ impl Render for GeneralPane {
                         "",
                         bool_row(&view, "openFilesInPreviewMode", "setting-openFilesInPreviewMode", model.open_files_in_preview_mode),
                     ))
-                    .child(exclude_editor(&view, &model, draft, save_error))
+                    .child(exclude_editor(&view, &model, draft, save_error, saving))
                     .child(labeled(
                         "File Sort By",
                         "",
@@ -235,6 +240,7 @@ fn exclude_editor(
     model: &GeneralModel,
     draft: Entity<EditableTextState>,
     save_error: bool,
+    saving: bool,
 ) -> impl IntoElement {
     let mut chips = div().flex().flex_wrap().gap_2();
     for (index, pattern) in model.exclude_patterns.iter().enumerate() {
@@ -259,7 +265,7 @@ fn exclude_editor(
                             pane.request_persist(
                                 "treePathExcludePatterns",
                                 string_array(&next),
-                                false,
+                                None,
                                 cx,
                             );
                         });
@@ -287,6 +293,16 @@ fn exclude_editor(
                 .flex()
                 .items_center()
                 .gap_2()
+                .on_key_down({
+                    let view = view.clone();
+                    let draft_for_enter = draft_for_add.clone();
+                    move |event, _window, app| {
+                        let plain_enter = event.keystroke.key == "enter" && !event.keystroke.modifiers.modified();
+                        if plain_enter {
+                            submit_exclusion(&view, &draft_for_enter, app);
+                        }
+                    }
+                })
                 .child(
                     text_input("setting-treePathExcludePatterns-draft")
                         .state(draft.downgrade())
@@ -307,23 +323,9 @@ fn exclude_editor(
                         .bg(rgb(0x4C9AFF))
                         .text_color(rgb(PAGE))
                         .cursor_pointer()
-                        .child("Add")
+                        .child(if saving { "Saving…" } else { "Add" })
                         .on_click(move |_event, _window, app| {
-                            let pattern = draft_for_add.read(app).as_str().to_string();
-                            let current = GeneralModel::from_snapshot(
-                                &view.read(app).bridge.get_preferences(),
-                            );
-                            let added = current.patterns_after_add(&pattern);
-                            if let Some(next) = added {
-                                view.update(app, |pane, cx| {
-                                    pane.request_persist(
-                                        "treePathExcludePatterns",
-                                        string_array(&next),
-                                        true,
-                                        cx,
-                                    );
-                                });
-                            }
+                            submit_exclusion(&view, &draft_for_add, app);
                         }),
                 ),
         )
@@ -335,6 +337,22 @@ fn exclude_editor(
         } else {
             div()
         })
+}
+
+fn submit_exclusion(view: &Entity<GeneralPane>, draft: &Entity<EditableTextState>, app: &mut App) {
+    let pattern = draft.read(app).as_str().to_string();
+    let current = GeneralModel::from_snapshot(&view.read(app).bridge.get_preferences());
+    let added = current.patterns_after_add(&pattern);
+    if let Some(next) = added {
+        view.update(app, |pane, cx| {
+            pane.request_persist(
+                "treePathExcludePatterns",
+                string_array(&next),
+                Some(pattern),
+                cx,
+            );
+        });
+    }
 }
 
 fn write_back(view: &Entity<GeneralPane>, key: &'static str, value: Value, app: &mut App) {

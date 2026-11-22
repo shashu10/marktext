@@ -213,7 +213,8 @@ pub struct PendingPersist {
     pub id: u64,
     pub key: String,
     pub value: Value,
-    pub clear_draft: bool,
+    /// Text that was in the field when Add was pressed. Removal sends none.
+    pub draft_text: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -223,7 +224,8 @@ pub enum PersistDecision {
     Applied(PendingPersist),
 }
 
-/// At most one exclusion write is in flight. The draft stays until a `persisted` result.
+/// At most one exclusion write is in flight. Another click is ignored until it finishes,
+/// because a second list computed from the old snapshot would replace the first save.
 #[derive(Debug)]
 pub struct PersistGate {
     next_id: u64,
@@ -240,8 +242,17 @@ impl PersistGate {
         }
     }
 
-    /// Returns the request id when the edit was accepted. A second edit waits.
-    pub fn request(&mut self, key: String, value: Value, clear_draft: bool) -> Option<u64> {
+    pub fn is_busy(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Returns the request id when this edit is the one in flight.
+    pub fn request(
+        &mut self,
+        key: String,
+        value: Value,
+        draft_text: Option<String>,
+    ) -> Option<u64> {
         if self.pending.is_some() {
             return None;
         }
@@ -251,7 +262,7 @@ impl PersistGate {
             id,
             key,
             value,
-            clear_draft,
+            draft_text,
         });
         self.save_error = false;
         Some(id)
@@ -272,6 +283,11 @@ impl PersistGate {
         self.save_error = false;
         PersistDecision::Applied(pending)
     }
+}
+
+/// A successful add clears the field only when it still shows the submitted rule.
+pub fn draft_still_matches(submitted: Option<&str>, current: &str) -> bool {
+    submitted.is_some_and(|text| text == current)
 }
 
 /// Same rule as `general/pandoc.ts`: an unanswered probe disables nothing,
@@ -385,11 +401,11 @@ mod tests {
             .request(
                 "treePathExcludePatterns".to_string(),
                 json!(["*.tmp"]),
-                true,
+                Some("*.tmp".to_string()),
             )
             .expect("first edit is accepted");
         assert!(
-            gate.request("treePathExcludePatterns".to_string(), json!([]), false)
+            gate.request("treePathExcludePatterns".to_string(), json!([]), None,)
                 .is_none()
         );
         assert_eq!(gate.finish(id + 1, true), PersistDecision::Ignored);
@@ -400,13 +416,16 @@ mod tests {
             .request(
                 "treePathExcludePatterns".to_string(),
                 json!(["*.tmp"]),
-                true,
+                Some("*.tmp".to_string()),
             )
             .expect("the failed edit no longer blocks");
         assert!(!gate.save_error);
         match gate.finish(id, true) {
             PersistDecision::Applied(pending) => {
-                assert!(pending.clear_draft);
+                assert_eq!(pending.draft_text.as_deref(), Some("*.tmp"));
+                assert!(draft_still_matches(pending.draft_text.as_deref(), "*.tmp"));
+                assert!(!draft_still_matches(pending.draft_text.as_deref(), "*.log"));
+                assert!(!draft_still_matches(None, "*.tmp"));
                 assert_eq!(pending.value, json!(["*.tmp"]));
             }
             other => panic!("expected the saved list, got {other:?}"),
