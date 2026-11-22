@@ -3,10 +3,13 @@ use std::sync::Arc;
 
 use gpui::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px, rgb,
+    prelude::*,
 };
 use marktext_core::{HostBridge, MemoryHostBridge};
-use marktext_ui_kit::{UI_FONT, select_control, toggle};
+use marktext_ui_kit::{
+    danger_button, locked_select, pref_error, pref_field, pref_note, pref_page, pref_section,
+    select_control, switch_disabled, toggle,
+};
 use serde_json::Value;
 
 use crate::model::{
@@ -18,13 +21,6 @@ pub type PreferencePublisher = Rc<dyn Fn(String, Value)>;
 
 /// Custom-dictionary removals. The host answers before the word disappears.
 pub type WordRemovalPublisher = Rc<dyn Fn(u64, String)>;
-
-const PAGE: u32 = 0xFFFFFF;
-const INK: u32 = 0x1C1C1F;
-const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
-const ACCENT: u32 = 0x4C9AFF;
-const DANGER: u32 = 0xB42318;
 
 pub struct EditorPane {
     bridge: Arc<MemoryHostBridge>,
@@ -93,18 +89,7 @@ impl Render for EditorPane {
         let saving = self.gate.is_busy();
         let view = cx.entity();
 
-        div()
-            .id("editor-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Editing"))
+        pref_page("editor-pane", "Editing", cx)
             .child(section(
                 "Code Block",
                 div()
@@ -204,6 +189,7 @@ impl Render for EditorPane {
                 &view,
                 &model,
                 &spellchecker,
+                cx,
                 save_error,
                 saving,
             ))
@@ -251,6 +237,7 @@ fn spellchecker_section(
     view: &Entity<EditorPane>,
     model: &EditorModel,
     host: &SpellcheckerHostState,
+    cx: &App,
     save_error: bool,
     saving: bool,
 ) -> impl IntoElement {
@@ -288,12 +275,7 @@ fn spellchecker_section(
             disabled_toggle("setting-spellcheckerAutoDetectLanguage", true),
         ));
         if enabled {
-            body = body.child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(MUTED))
-                    .child("Automatically detect document language"),
-            );
+            body = body.child(pref_note("Automatically detect document language", cx));
         }
     } else {
         let options = model.language_options_for(&host.dictionaries);
@@ -303,7 +285,7 @@ fn spellchecker_section(
             language_row(view, &options, &model.spellchecker_language, !enabled),
         ));
         if enabled {
-            body = body.child(custom_dictionary(view, host, save_error, saving));
+            body = body.child(custom_dictionary(view, host, save_error, saving, cx));
         }
     }
 
@@ -315,15 +297,11 @@ fn custom_dictionary(
     host: &SpellcheckerHostState,
     save_error: bool,
     saving: bool,
+    cx: &App,
 ) -> impl IntoElement {
     let mut rows = div().flex().flex_col().gap_2();
     if host.words.is_empty() {
-        rows = rows.child(
-            div()
-                .text_sm()
-                .text_color(rgb(MUTED))
-                .child("No words available"),
-        );
+        rows = rows.child(pref_note("No words available", cx));
     } else {
         for word in &host.words {
             let view = view.clone();
@@ -336,73 +314,45 @@ fn custom_dictionary(
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(CHIP))
-                    .child(div().text_color(rgb(INK)).child(word.clone()))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!(
-                                "setting-customDictionary-delete-{word}"
-                            )))
-                            .px_2()
-                            .text_color(rgb(DANGER))
-                            .cursor_pointer()
-                            .child(if saving { "…" } else { "Delete" })
-                            .on_click(move |_event, _window, app| {
-                                view.update(app, |pane, cx| {
-                                    pane.request_word_removal(&word_owned, cx);
-                                });
-                            }),
-                    ),
+                    .gap_3()
+                    .child(word.clone())
+                    .child(danger_button(
+                        SharedString::from(format!("setting-customDictionary-delete-{word}")),
+                        if saving { "…" } else { "Delete" },
+                        move |_event, _window, app| {
+                            view.update(app, |pane, cx| {
+                                pane.request_word_removal(&word_owned, cx);
+                            });
+                        },
+                    )),
             );
         }
     }
 
-    div()
-        .id("setting-customDictionary")
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child("Custom Dictionary"))
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(MUTED))
-                .child("Add custom words to your personal dictionary"),
-        )
-        .child(rows)
-        .child(if save_error {
-            div()
-                .text_sm()
-                .text_color(rgb(DANGER))
-                .child("Could not remove the word. Please try again.")
-        } else {
-            div()
-        })
+    let error = if save_error {
+        pref_error("Could not remove the word. Please try again.", cx).into_any_element()
+    } else {
+        div().into_any_element()
+    };
+    pref_field(
+        "Custom Dictionary",
+        "Add custom words to your personal dictionary",
+        div()
+            .id("setting-customDictionary")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(rows)
+            .child(error),
+    )
 }
 
 fn section(title: &'static str, body: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(div().text_color(rgb(MUTED)).child(title))
-        .child(body)
+    pref_section(title, body)
 }
 
 fn labeled(label: &'static str, note: &'static str, control: impl IntoElement) -> impl IntoElement {
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_color(rgb(INK)).child(label))
-        .child(control);
-    if !note.is_empty() {
-        column = column.child(div().text_sm().text_color(rgb(MUTED)).child(note));
-    }
-    column
+    pref_field(label, note, control)
 }
 
 fn choice_row(
@@ -444,22 +394,14 @@ fn language_row(
     disabled: bool,
 ) -> impl IntoElement {
     if disabled {
-        return div()
-            .id("setting-spellcheckerLanguage")
-            .font_family(UI_FONT)
-            .flex()
-            .flex_wrap()
-            .gap_2()
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(CHIP))
-                    .text_color(rgb(MUTED))
-                    .child(selected.to_string()),
-            )
-            .into_any_element();
+        return locked_select(
+            "setting-spellcheckerLanguage",
+            options
+                .iter()
+                .map(|(value, label)| (value.clone(), label.clone())),
+            selected,
+        )
+        .into_any_element();
     }
     let view = view.clone();
     select_control(
@@ -496,28 +438,21 @@ fn bool_row_maybe_disabled(
     checked: bool,
     disabled: bool,
 ) -> impl IntoElement {
-    if disabled {
-        return disabled_toggle(id, checked).into_any_element();
-    }
     let view = view.clone();
-    toggle(id, checked, move |next, _window, app| {
-        write_back(&view, key, Value::Bool(next), app);
-    })
+    switch_disabled(
+        toggle(id, checked, move |next, _window, app| {
+            if disabled {
+                return;
+            }
+            write_back(&view, key, Value::Bool(next), app);
+        }),
+        disabled,
+    )
     .into_any_element()
 }
 
 fn disabled_toggle(id: &'static str, checked: bool) -> impl IntoElement {
-    div()
-        .id(id)
-        .font_family(UI_FONT)
-        .w(px(72.))
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(if checked { ACCENT } else { CHIP }))
-        .text_color(rgb(MUTED))
-        .opacity(0.6)
-        .child(if checked { "On" } else { "Off" })
+    switch_disabled(toggle(id, checked, |_next, _window, _app| {}), true)
 }
 
 fn write_back(view: &Entity<EditorPane>, key: &'static str, value: Value, app: &mut App) {

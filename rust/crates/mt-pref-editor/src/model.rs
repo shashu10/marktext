@@ -39,10 +39,9 @@ impl TabSize {
     pub fn from_value(value: Option<&Value>) -> Self {
         match value {
             Some(Value::String(text)) if text == "tab" => Self::Tab,
-            Some(Value::Number(number)) => number
-                .as_u64()
-                .map(Self::Spaces)
-                .unwrap_or(Self::Spaces(4)),
+            Some(Value::Number(number)) => {
+                number.as_u64().map(Self::Spaces).unwrap_or(Self::Spaces(4))
+            }
             _ => Self::Spaces(4),
         }
     }

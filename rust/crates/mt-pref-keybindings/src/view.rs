@@ -5,12 +5,13 @@ use gpui::{
     div, prelude::*, px, rgb,
 };
 use marktext_core::KeybindingEntry;
-use marktext_ui_kit::{UI_FONT, toggle};
+use marktext_ui_kit::{
+    action_button, button_disabled, choice_button, pref_error, pref_note, pref_page, pref_section,
+    toggle,
+};
 
 use crate::accelerator::{accelerator_label, record_keystroke};
-use crate::model::{
-    PersistDecision, PersistGate, ToggleAction, group_label, KeybindingsModel,
-};
+use crate::model::{KeybindingsModel, PersistDecision, PersistGate, ToggleAction, group_label};
 
 /// Posts `SAVE_KEYBINDING` / `RESET_ALL_KEYBINDINGS` / reload / debug dump.
 pub type KeybindingPublisher = Rc<dyn Fn(KeybindingHostRequest)>;
@@ -32,7 +33,6 @@ pub enum KeybindingHostRequest {
 const PAGE: u32 = 0xFFFFFF;
 const INK: u32 = 0x1C1C1F;
 const MUTED: u32 = 0x5C5C66;
-const CHIP: u32 = 0xF4F4F5;
 const ACCENT: u32 = 0x4C9AFF;
 const DANGER: u32 = 0xB42318;
 const ROW_LINE: u32 = 0xE8E8EA;
@@ -66,11 +66,9 @@ impl KeybindingsPane {
         cx: &mut Context<Self>,
     ) {
         let selected = self.model.selected_id.clone();
-        self.model =
-            KeybindingsModel::from_host(commands, is_mac, show_debug, loading, load_error);
-        self.model.selected_id = selected.filter(|id| {
-            self.model.commands.iter().any(|command| &command.id == id)
-        });
+        self.model = KeybindingsModel::from_host(commands, is_mac, show_debug, loading, load_error);
+        self.model.selected_id =
+            selected.filter(|id| self.model.commands.iter().any(|command| &command.id == id));
         self.model.save_error = false;
         cx.notify();
     }
@@ -136,12 +134,7 @@ impl KeybindingsPane {
         (self.publish)(KeybindingHostRequest::Reload);
     }
 
-    fn begin_recording(
-        &mut self,
-        command_id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn begin_recording(&mut self, command_id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.model.selected_id = Some(command_id);
         self.model.recorder_label.clear();
         self.model.recorder_invalid = false;
@@ -163,7 +156,10 @@ impl KeybindingsPane {
         }
         let local = self.model.conflicts(&command_id, &accelerator);
         if !local.is_empty() {
-            let names: Vec<_> = local.iter().map(|command| command.description.clone()).collect();
+            let names: Vec<_> = local
+                .iter()
+                .map(|command| command.description.clone())
+                .collect();
             let label = accelerator_label(&accelerator, self.model.is_mac);
             self.model.conflict_message = Some(format!(
                 "{label} is already assigned to {}.",
@@ -172,7 +168,10 @@ impl KeybindingsPane {
             cx.notify();
             return;
         }
-        let Some(pending) = self.gate.request_save(command_id.clone(), accelerator.clone()) else {
+        let Some(pending) = self
+            .gate
+            .request_save(command_id.clone(), accelerator.clone())
+        else {
             return;
         };
         self.model.conflict_message = None;
@@ -207,24 +206,10 @@ impl Render for KeybindingsPane {
         let view = cx.entity();
         let model = self.model.clone();
         let saving = self.gate.is_busy();
-        let mut root = div()
-            .id("keybindings-pane")
-            .font_family(UI_FONT)
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_4()
-            .p_2()
-            .bg(rgb(PAGE))
-            .text_color(rgb(INK))
-            .child(div().text_xl().child("Keybindings"))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(MUTED))
-                    .child("To change a shortcut, select its key combination, then press the new key combination. Documentation: https://marktext.me/docs/key-bindings"),
-            );
+        let mut root = pref_page("keybindings-pane", "Keybindings", cx).child(pref_note(
+            "To change a shortcut, select its key combination, then press the new key combination. Documentation: https://marktext.me/docs/key-bindings",
+            cx,
+        ));
 
         if model.load_error {
             let view = view.clone();
@@ -233,58 +218,40 @@ impl Render for KeybindingsPane {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().text_color(rgb(DANGER)).child("Could not load keyboard shortcuts."))
-                    .child(
-                        div()
-                            .id("keybindings-reload")
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(ACCENT))
-                            .text_color(rgb(PAGE))
-                            .cursor_pointer()
-                            .child("Reload")
-                            .on_click(move |_event, _window, app| {
-                                view.update(app, |pane, cx| {
-                                    pane.requested_once = false;
-                                    pane.ensure_requested();
-                                    cx.notify();
-                                });
-                            }),
-                    ),
+                    .child(pref_error("Could not load keyboard shortcuts.", cx))
+                    .child(action_button(
+                        "keybindings-reload",
+                        "Reload",
+                        move |_event, _window, app| {
+                            view.update(app, |pane, cx| {
+                                pane.requested_once = false;
+                                pane.ensure_requested();
+                                cx.notify();
+                            });
+                        },
+                    )),
             );
         }
 
         if model.loading && model.commands.is_empty() {
-            root = root.child(div().text_color(rgb(MUTED)).child("Loading shortcuts…"));
+            root = root.child(pref_note("Loading shortcuts…", cx));
         }
 
         if let Some(message) = &model.conflict_message {
-            root = root.child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(DANGER))
-                    .child(format!("Shortcut in use: {message}")),
-            );
+            root = root.child(pref_error(format!("Shortcut in use: {message}"), cx));
         }
         if model.save_error {
-            root = root.child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(DANGER))
-                    .child("Error saving keybindings. The previous shortcuts have been kept."),
-            );
+            root = root.child(pref_error(
+                "Error saving keybindings. The previous shortcuts have been kept.",
+                cx,
+            ));
         }
 
         let recorder_focus = self.recorder_focus.clone();
         for (group, commands) in model.grouped() {
-            let mut section = div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(div().text_color(rgb(MUTED)).child(group_label(group)));
+            let mut commands_column = div().flex().flex_col().gap_1();
             for command in commands {
-                section = section.child(command_row(
+                commands_column = commands_column.child(command_row(
                     &view,
                     command,
                     &model,
@@ -292,33 +259,24 @@ impl Render for KeybindingsPane {
                     recorder_focus.clone(),
                 ));
             }
-            root = root.child(section);
+            root = root.child(pref_section(group_label(group), commands_column));
         }
 
         if model.show_debug {
             let view = view.clone();
-            root = root.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(div().text_color(rgb(MUTED)).child("Debug Options"))
-                    .child(
-                        div()
-                            .id("keybindings-debug-dump")
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(CHIP))
-                            .cursor_pointer()
-                            .child("Dump Keyboard Info")
-                            .on_click(move |_event, _window, app| {
-                                view.update(app, |pane, _cx| {
-                                    (pane.publish)(KeybindingHostRequest::DebugDump);
-                                });
-                            }),
-                    ),
-            );
+            root = root.child(pref_section(
+                "Debug Options",
+                choice_button(
+                    "keybindings-debug-dump",
+                    "Dump Keyboard Info",
+                    false,
+                    move |_event, _window, app| {
+                        view.update(app, |pane, _cx| {
+                            (pane.publish)(KeybindingHostRequest::DebugDump);
+                        });
+                    },
+                ),
+            ));
         }
 
         let can_restore = !model.loading && !saving && model.has_custom_bindings();
@@ -331,20 +289,20 @@ impl Render for KeybindingsPane {
                 .border_color(rgb(ROW_LINE))
                 .flex()
                 .justify_end()
-                .child(
-                    div()
-                        .id("keybindings-restore-defaults")
-                        .px_3()
-                        .py_1()
-                        .rounded_md()
-                        .bg(rgb(if can_restore { ACCENT } else { CHIP }))
-                        .text_color(rgb(if can_restore { PAGE } else { MUTED }))
-                        .when(can_restore, |el| el.cursor_pointer())
-                        .child(if saving { "Saving…" } else { "Restore defaults" })
-                        .on_click(move |_event, _window, app| {
+                .child(button_disabled(
+                    action_button(
+                        "keybindings-restore-defaults",
+                        if saving {
+                            "Saving…"
+                        } else {
+                            "Restore defaults"
+                        },
+                        move |_event, _window, app| {
                             view_restore.update(app, |pane, cx| pane.request_reset_all(cx));
-                        }),
-                ),
+                        },
+                    ),
+                    !can_restore,
+                )),
         )
     }
 }
@@ -379,25 +337,22 @@ fn command_row(
         let view_edit = view.clone();
         let edit_id = command.id.clone();
         let can_edit = !disabled && bound;
-        right = right.child(
-            div()
-                .id(SharedString::from(format!("keybinding-edit-{}", command.id)))
-                .px_3()
-                .py_1()
-                .rounded_full()
-                .bg(rgb(CHIP))
-                .text_color(rgb(if bound { INK } else { MUTED }))
-                .when(can_edit, |el| el.cursor_pointer())
-                .child(label)
-                .on_click(move |_event, window, app| {
+        right = right.child(button_disabled(
+            choice_button(
+                SharedString::from(format!("keybinding-edit-{}", command.id)),
+                label,
+                bound,
+                move |_event, window, app| {
                     if !can_edit {
                         return;
                     }
                     view_edit.update(app, |pane, cx| {
                         pane.begin_recording(edit_id.clone(), window, cx);
                     });
-                }),
-        );
+                },
+            ),
+            !can_edit,
+        ));
     }
 
     div()
@@ -439,7 +394,10 @@ fn command_row(
                 ))
                 .child(
                     div()
-                        .id(SharedString::from(format!("setting-keybinding-{}", command.id)))
+                        .id(SharedString::from(format!(
+                            "setting-keybinding-{}",
+                            command.id
+                        )))
                         .text_color(rgb(INK))
                         .child(command.description.clone()),
                 ),

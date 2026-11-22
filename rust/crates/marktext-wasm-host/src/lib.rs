@@ -5,9 +5,9 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
+use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
-use marktext_ui_kit::setting_row;
+use marktext_ui_kit::{pref_field, pref_page};
 use mt_pref_appearance::AppearancePane;
 use mt_pref_editor::EditorPane;
 use mt_pref_files::FilesPane;
@@ -122,7 +122,11 @@ impl HostView {
                 }
                 return None;
             }
-            HostToGuest::HostActionResult { id, status, payload } => {
+            HostToGuest::HostActionResult {
+                id,
+                status,
+                payload,
+            } => {
                 let request_id = *id;
                 self.images.update(cx, |pane, cx| {
                     pane.accept_host_result(request_id, status, payload, cx);
@@ -172,14 +176,7 @@ impl HostView {
                 load_error,
             } => {
                 self.keybindings.update(cx, |pane, cx| {
-                    pane.apply_snapshot(
-                        commands,
-                        *is_mac,
-                        *show_debug,
-                        *loading,
-                        *load_error,
-                        cx,
-                    );
+                    pane.apply_snapshot(commands, *is_mac, *show_debug, *loading, *load_error, cx);
                 });
                 return None;
             }
@@ -227,7 +224,7 @@ impl HostView {
 }
 
 impl Render for HostView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
         let content: AnyElement = match self.session.active_pane() {
             "general" => self.general.clone().into_any_element(),
@@ -237,13 +234,13 @@ impl Render for HostView {
             "markdown" => self.markdown.clone().into_any_element(),
             "images" => self.images.clone().into_any_element(),
             "keybindings" => self.keybindings.clone().into_any_element(),
-            _ => placeholder(self).into_any_element(),
+            _ => placeholder(self, cx).into_any_element(),
         };
         div().size_full().child(content)
     }
 }
 
-fn placeholder(view: &HostView) -> impl IntoElement {
+fn placeholder(view: &HostView, cx: &gpui::App) -> impl IntoElement {
     let pane = view.session.active_pane().to_string();
     let theme = view
         .session
@@ -252,21 +249,9 @@ fn placeholder(view: &HostView) -> impl IntoElement {
         .text("theme")
         .unwrap_or("")
         .to_string();
-    div()
-        .font_family("Liberation Sans")
-        .size_full()
-        .flex()
-        .flex_col()
-        .p_6()
-        .bg(rgb(0x141416))
-        .child(setting_row(
-            "Active pane",
-            div().text_color(rgb(0xf4f4f5)).child(pane),
-        ))
-        .child(setting_row(
-            "Theme",
-            div().text_color(rgb(0xf4f4f5)).child(theme),
-        ))
+    pref_page("unmigrated-pane", "Preferences", cx)
+        .child(pref_field("Active pane", "", pane))
+        .child(pref_field("Theme", "", theme))
 }
 
 fn save_result_target(id: u64) -> (&'static str, u64) {

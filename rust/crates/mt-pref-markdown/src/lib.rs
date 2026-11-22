@@ -6,5 +6,7 @@
 mod model;
 mod view;
 
-pub use model::{Choice, IndentValue, MarkdownModel, PersistDecision, PersistGate, plantuml_url_ok};
-pub use view::{MarkdownPane, PreferencePublisher, PersistPublisher};
+pub use model::{
+    Choice, IndentValue, MarkdownModel, PersistDecision, PersistGate, plantuml_url_ok,
+};
+pub use view::{MarkdownPane, PersistPublisher, PreferencePublisher};

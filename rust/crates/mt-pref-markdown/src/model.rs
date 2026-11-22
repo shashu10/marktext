@@ -413,10 +413,7 @@ mod tests {
         assert_eq!(model.mermaid_light_theme, "default");
         assert_eq!(model.mermaid_dark_theme, "dark");
         assert_eq!(model.sequence_theme, "hand");
-        assert_eq!(
-            model.plantuml_server,
-            "https://www.plantuml.com/plantuml"
-        );
+        assert_eq!(model.plantuml_server, "https://www.plantuml.com/plantuml");
         assert_eq!(model.prefer_heading_style, "atx");
 
         bridge.set_preference("listIndentation".to_string(), json!("dfm"));
@@ -491,6 +488,9 @@ mod tests {
         assert_eq!(MarkdownModel::frontmatter_type_choices().len(), 4);
         assert_eq!(MarkdownModel::mermaid_theme_choices().len(), 11);
         assert_eq!(MarkdownModel::sequence_theme_choices()[0].value, "hand");
-        assert_eq!(MarkdownModel::heading_style_choices()[1].label, "Setext Style");
+        assert_eq!(
+            MarkdownModel::heading_style_choices()[1].label,
+            "Setext Style"
+        );
     }
 }

@@ -425,10 +425,7 @@ mod tests {
         bridge.set_preference("autoSave".to_string(), json!(true));
         bridge.set_preference("autoSaveDelay".to_string(), json!(2500));
         bridge.set_preference("startUpAction".to_string(), json!("folder"));
-        bridge.set_preference(
-            "defaultDirectoryToOpen".to_string(),
-            json!("/tmp/notes"),
-        );
+        bridge.set_preference("defaultDirectoryToOpen".to_string(), json!("/tmp/notes"));
         bridge.set_preference("endOfLine".to_string(), json!("lf"));
         bridge.set_preference("trimTrailingNewline".to_string(), json!(0));
         bridge.set_preference("defaultEncoding".to_string(), json!("utf16le"));
@@ -475,10 +472,7 @@ mod tests {
         assert!(!gate.save_error);
         match gate.finish(id, true) {
             PersistDecision::Applied(pending) => {
-                assert_eq!(
-                    pending.changes.get("startUpAction"),
-                    Some(&json!("folder"))
-                );
+                assert_eq!(pending.changes.get("startUpAction"), Some(&json!("folder")));
                 assert_eq!(
                     pending.changes.get("defaultDirectoryToOpen"),
                     Some(&json!("/home/notes"))
