@@ -9,8 +9,8 @@
 
 ## Phase 0 — Shared Foundations (Sequential)
 
-| Slice ID | Component / Deliverable                                                   | Feature Flag Key | Prerequisites  | Target Paths                                             | Status |
-| -------- | ------------------------------------------------------------------------- | ---------------- | -------------- | -------------------------------------------------------- | ------ |
+| Slice ID | Component / Deliverable                                                   | Feature Flag Key | Prerequisites  | Target Paths                                             | Status     |
+| -------- | ------------------------------------------------------------------------- | ---------------- | -------------- | -------------------------------------------------------- | ---------- |
 | `P0.1`   | Multi-env Feature Flag Router (`dev` / `staging` / `prod`)                | `flags/*`        | —              | `packages/desktop/src/shared/flags/`                     | `verified` |
 | `P0.2`   | Rust Workspace (`marktext-core`, `marktext-ui-kit`, `marktext-wasm-host`) | —                | —              | `rust/`                                                  | `verified` |
 | `P0.3`   | Electron `<GpuiPaneHost>` Persistent Iframe & `WasmPostMessageBridge`     | —                | `P0.1`, `P0.2` | `packages/desktop/src/renderer/src/components/gpuiHost/` | `verified` |
@@ -20,23 +20,23 @@
 
 ## Wave 1A — Preferences Window Panes (Parallel Cloud Agents)
 
-| Slice ID | Preference Pane                     | Feature Flag Key         | Prerequisites | Legacy Source                                            | Target Rust Crate                 | Status    |
-| -------- | ----------------------------------- | ------------------------ | ------------- | -------------------------------------------------------- | --------------------------------- | --------- |
-| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review` |
-| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `todo` |
-| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `todo` |
-| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `todo` |
-| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `todo` |
-| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo` |
-| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `todo` |
-| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `todo` |
+| Slice ID | Preference Pane                     | Feature Flag Key         | Prerequisites | Legacy Source                                            | Target Rust Crate                 | Status        |
+| -------- | ----------------------------------- | ------------------------ | ------------- | -------------------------------------------------------- | --------------------------------- | ------------- |
+| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review`   |
+| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `todo`        |
+| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `todo`        |
+| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `todo`        |
+| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-progress` |
+| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `todo`        |
+| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `todo`        |
+| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `todo`        |
 
 ---
 
 ## Wave 1B — Isolated Dialogs & Editor Panels (Parallel Cloud Agents)
 
-| Slice ID | Component                   | Feature Flag Key        | Prerequisites | Legacy Source                                              | Target Rust Crate                | Status    |
-| -------- | --------------------------- | ----------------------- | ------------- | ---------------------------------------------------------- | -------------------------------- | --------- |
+| Slice ID | Component                   | Feature Flag Key        | Prerequisites | Legacy Source                                              | Target Rust Crate                | Status |
+| -------- | --------------------------- | ----------------------- | ------------- | ---------------------------------------------------------- | -------------------------------- | ------ |
 | `B1`     | About Dialog _(Canary #1)_  | `dialog.about`          | `P0.3`        | `components/about/`                                        | `rust/crates/mt-dialog-about`    | `todo` |
 | `B2`     | Document Statistics Popover | `panel.docStats`        | `P0.3`        | `components/titleBar/documentStatistics.vue`               | `rust/crates/mt-panel-doc-stats` | `todo` |
 | `B3`     | Outline / TOC Panel         | `panel.outlineToc`      | `P0.3`        | `components/editorWithTabs/outline.vue`, `sideBar/toc.vue` | `rust/crates/mt-panel-toc`       | `todo` |
@@ -51,12 +51,12 @@
 | Slice ID | Component / Milestone                         | Feature Flag Key     | Prerequisites | Target                                        | Status    |
 | -------- | --------------------------------------------- | -------------------- | ------------- | --------------------------------------------- | --------- |
 | `W2.A`   | **Native GPUI Preferences Window Flip**       | `window.preferences` | `A1`–`A8`     | `rust/crates/mt-pref-app` + `NativeIpcBridge` | `blocked` |
-| `C1`     | Title Bar (Breadcrumb, Save Dot, Controls)    | `chrome.titleBar`    | `P0.3`        | `rust/crates/mt-chrome-titlebar`              | `todo` |
-| `C2`     | Tab Bar (Reorder, Dirty/Preview, Close)       | `chrome.tabBar`      | `P0.3`        | `rust/crates/mt-chrome-tabs`                  | `todo` |
-| `C3`     | Left Sidebar — File Tree & Opened Files       | `sidebar.files`      | `P0.3`        | `rust/crates/mt-sidebar-files`                | `todo` |
-| `C4`     | Left Sidebar — Ripgrep Global Search          | `sidebar.search`     | `P0.3`        | `rust/crates/mt-sidebar-search`               | `todo` |
-| `C5`     | In-Document Find & Replace Bar                | `panel.findReplace`  | `P0.3`        | `rust/crates/mt-panel-find`                   | `todo` |
-| `C6`     | Recent Screen, MediaViewer, Tab Notifications | `chrome.misc`        | `P0.3`        | `rust/crates/mt-chrome-misc`                  | `todo` |
+| `C1`     | Title Bar (Breadcrumb, Save Dot, Controls)    | `chrome.titleBar`    | `P0.3`        | `rust/crates/mt-chrome-titlebar`              | `todo`    |
+| `C2`     | Tab Bar (Reorder, Dirty/Preview, Close)       | `chrome.tabBar`      | `P0.3`        | `rust/crates/mt-chrome-tabs`                  | `todo`    |
+| `C3`     | Left Sidebar — File Tree & Opened Files       | `sidebar.files`      | `P0.3`        | `rust/crates/mt-sidebar-files`                | `todo`    |
+| `C4`     | Left Sidebar — Ripgrep Global Search          | `sidebar.search`     | `P0.3`        | `rust/crates/mt-sidebar-search`               | `todo`    |
+| `C5`     | In-Document Find & Replace Bar                | `panel.findReplace`  | `P0.3`        | `rust/crates/mt-panel-find`                   | `todo`    |
+| `C6`     | Recent Screen, MediaViewer, Tab Notifications | `chrome.misc`        | `P0.3`        | `rust/crates/mt-chrome-misc`                  | `todo`    |
 
 ---
 
@@ -64,7 +64,7 @@
 
 | Slice ID | Component / Milestone                                       | Feature Flag Key     | Prerequisites               | Notes                                                         | Status    |
 | -------- | ----------------------------------------------------------- | -------------------- | --------------------------- | ------------------------------------------------------------- | --------- |
-| `D1`     | Main Process Services → `marktext-core`                     | `core.services`      | `P0.2`                      | Watcher, atomic writes, encoding, sessions/checkpoints, menus | `todo` |
+| `D1`     | Main Process Services → `marktext-core`                     | `core.services`      | `P0.2`                      | Watcher, atomic writes, encoding, sessions/checkpoints, menus | `todo`    |
 | `D2`     | Source Code Mode (replaces CodeMirror 5)                    | `editor.sourceCode`  | `W2`, `D1`                  | Native GPUI text/code editor                                  | `blocked` |
 | `D3a`    | Muya Parser / AST & Inline Engine                           | `editor.muya.parser` | `D1`                        | Verified against existing CommonMark/GFM Vitest specs         | `blocked` |
 | `D3b`    | Muya Block Layout, Folding & Selection/Undo                 | `editor.muya.layout` | `D3a`                       | Core interactive WYSIWYG loop                                 | `blocked` |
