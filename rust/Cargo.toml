@@ -5,6 +5,7 @@ members = [
     "crates/marktext-ui-kit",
     "crates/marktext-wasm-host",
     "crates/mt-pref-general",
+    "crates/mt-pref-editor",
 ]
 
 [workspace.package]

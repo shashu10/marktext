@@ -1,18 +1,20 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
-//! this view answers with `GuestToHost`. The General pane is mounted here;
-//! other panes still use the placeholder until their crates land.
+//! this view answers with `GuestToHost`. Preference panes mount here as their
+//! crates land; unknown panes still use the placeholder.
 
 use std::rc::Rc;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, rgb};
 use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
+use mt_pref_editor::EditorPane;
 use mt_pref_general::GeneralPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
+    editor: gpui::Entity<EditorPane>,
 }
 
 impl HostView {
@@ -21,12 +23,23 @@ impl HostView {
         let bridge = session.bridge_handle();
         let general = cx.new(|_cx| {
             GeneralPane::new(
-                bridge,
+                bridge.clone(),
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
             )
         });
-        Self { session, general }
+        let editor = cx.new(|_cx| {
+            EditorPane::new(
+                bridge,
+                Rc::new(publish_preference),
+                Rc::new(publish_word_removal),
+            )
+        });
+        Self {
+            session,
+            general,
+            editor,
+        }
     }
 
     pub fn active_pane(&self) -> &str {
@@ -34,16 +47,41 @@ impl HostView {
     }
 
     pub fn apply(&mut self, message: &HostToGuest, cx: &mut Context<Self>) -> Option<GuestToHost> {
-        if let HostToGuest::PreferenceResult { id, status } = message {
-            let persisted = status == "persisted";
-            let request_id = *id;
-            self.general.update(cx, |pane, cx| {
-                pane.accept_persist_result(request_id, persisted, cx);
-            });
-            return None;
+        match message {
+            HostToGuest::PreferenceResult { id, status } => {
+                let persisted = status == "persisted";
+                let request_id = *id;
+                self.general.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
+                return None;
+            }
+            HostToGuest::SpellcheckerInfo {
+                is_osx,
+                dictionaries,
+                words,
+            } => {
+                let is_osx = *is_osx;
+                let dictionaries = dictionaries.clone();
+                let words = words.clone();
+                self.editor.update(cx, |pane, cx| {
+                    pane.apply_spellchecker_info(is_osx, dictionaries, words, cx);
+                });
+                return None;
+            }
+            HostToGuest::SpellcheckerRemoveResult { id, ok } => {
+                let request_id = *id;
+                let ok = *ok;
+                self.editor.update(cx, |pane, cx| {
+                    pane.accept_word_removal(request_id, ok, cx);
+                });
+                return None;
+            }
+            _ => {}
         }
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
+        self.editor.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -51,10 +89,10 @@ impl HostView {
 impl Render for HostView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // The window sizes this root. A child view's `size_full` is a percentage of it.
-        let content: AnyElement = if self.session.active_pane() == "general" {
-            self.general.clone().into_any_element()
-        } else {
-            placeholder(self).into_any_element()
+        let content: AnyElement = match self.session.active_pane() {
+            "general" => self.general.clone().into_any_element(),
+            "editor" => self.editor.clone().into_any_element(),
+            _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)
     }
@@ -102,6 +140,15 @@ pub fn publish_preference(key: String, value: Value) {
     #[cfg(not(target_family = "wasm"))]
     {
         let _ = (key, value);
+    }
+}
+
+pub fn publish_word_removal(id: u64, word: String) {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::SpellcheckerRemoveWord { id, word });
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let _ = (id, word);
     }
 }
 
