@@ -26,3 +26,9 @@ playwright-report/
 .codex/
 .agents/
 .agent/
+
+# Rust workspace output and generated wasm-bindgen glue.
+rust/target/
+packages/desktop/src/renderer/public/gpui-host/*.js
+packages/desktop/src/renderer/public/gpui-host/*.wasm
+packages/desktop/src/renderer/public/gpui-host/*.d.ts

@@ -4,7 +4,12 @@
     :class="{ 'is-mac': isMac }"
   >
     <title-bar v-if="showCustomTitleBar" />
-    <side-bar />
+    <gpui-pane-host
+      flag-key="prefs.sidebar"
+      pane="sidebar"
+    >
+      <side-bar />
+    </gpui-pane-host>
     <div
       class="pref-content"
       :class="{ frameless: titleBarStyle === 'custom' || isMac }"
@@ -24,6 +29,7 @@ import { usePreferencesStore } from '@/store/preferences'
 import { storeToRefs } from 'pinia'
 import TitleBar from '@/prefComponents/common/titlebar.vue'
 import SideBar from '@/prefComponents/sideBar/index.vue'
+import GpuiPaneHost from '@/components/gpuiHost/GpuiPaneHost.vue'
 import { addThemeStyle } from '@/util/theme'
 import { useSettingLocation } from '@/prefComponents/settingLocation'
 import { DEFAULT_STYLE } from '@/config'
