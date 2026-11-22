@@ -311,6 +311,16 @@ This fork is executing a **Strangler-Fig Electron → Rust (GPUI)** migration wh
 - `docs/migration/ARCHITECTURE.md` — measured subsystem map (`~104k LOC`), feature inventory, IPC/Pinia boundaries, and the Outline-click → Editor-scroll reference trace.
 - `docs/migration/MIGRATION_PLAN.md` — the Two-Stage **`gpui_web` (WASM in persistent `<iframe>`) → Native OS GPUI** strategy, `HostBridge` trait contract, `gpui_web` constraints, dependency DAG, and governance rules.
 - `docs/migration/STATUS.md` — live slice tracker (Slice ID, feature flag key, prerequisites, target crate, and status). Check your slice's prerequisites and update its status row in your PR.
+- `docs/migration/RUNBOOK.md` — **mandatory step-by-step execution protocol** for running a migration slice end-to-end (Before baseline → early Draft PR → implementation → After benchmark & screenshots → tag `@shashu10`).
+
+**Mandatory Cloud Agent Slice Sequence (See `docs/migration/RUNBOOK.md` for Full Template):**
+
+1. **Check prereqs & claim:** Verify slice prerequisites in `STATUS.md` and check open `migration` PRs (`gh pr list --label migration`) to avoid parallel collisions; branch off `develop` and mark `in-progress`.
+2. **Capture "Before" baseline FIRST:** Build untouched legacy app and record startup/pane latency, Main+Renderer RSS memory, 5s idle CPU %, bundle size, and a Before screenshot in `/tmp/` (never commit PNGs to git).
+3. **Open a Draft PR early:** Push the `STATUS.md` claim and open a Draft PR (`--draft --base develop --label migration`) containing the **Before baseline table** and **Tentative Implementation Plan** so measurements survive context compaction and lock the slice.
+4. **Implement behind feature flag:** Build the Rust GPUI crate against `HostBridge` + `gpui-ce` (`default-features = false`), keep `prod` on `legacy`, and add Rust + IPC parity tests.
+5. **Verify & capture "After" metrics:** Run `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `cargo test`, `cargo clippy`, `wasm32` build, repeat the exact same measurements + After screenshot, and verify `flag=legacy` rollback.
+6. **Finalize PR & request human review:** Fill in **Planned vs. Actually Implemented**, **Before vs. After scorecard** (honestly distinguishing Stage 1 WASM overhead guardrails vs. Stage 2 native ROI), and screenshot artifact links; run `gh pr ready`, tag **`@shashu10`**, and **never self-merge**.
 
 **Key Migration Invariants for All Agents:**
 

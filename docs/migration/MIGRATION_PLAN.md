@@ -122,4 +122,5 @@ Wave 4: Flip Entire Main Editor Window & Retire Electron Runtime
   - Migration PRs target `develop` with label `migration` → trigger deterministic CI (`lint`, `typecheck`, unit tests, Rust tests) + independent QA Verifier → require green checks + human `CODEOWNERS` LGTM.
 - **Metrics Tracked per Rollout:**
   - **Delivery:** Cycle time per migrated slice (before vs. after), PRs merged vs. blocked/rejected, failure & retry rates, cost per agent run.
-  - **Runtime:** Startup latency, RSS memory per window, bundle/binary size, large-document parse/render/scroll p95 latency, visual pixel-diff %.
+  - **Runtime:** Startup latency, RSS memory per window, idle CPU %, bundle/binary size, large-document parse/render/scroll p95 latency, visual pixel-diff %.
+- **Execution Runbook:** Every Cloud Agent must follow the Draft-PR-first Before/After measurement and human-review protocol in [`docs/migration/RUNBOOK.md`](./RUNBOOK.md).
