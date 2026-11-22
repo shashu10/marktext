@@ -168,6 +168,27 @@ const electronPath = (): string => {
   return path.join(desktop, 'node_modules/electron/dist', rel)
 }
 
+/**
+ * Headless Linux (Xvfb) has no hardware GPU, so GPUI's WebGL2 backend needs
+ * SwiftShader there. macOS (Metal) and Windows have native hardware WebGL2, and
+ * forcing SwiftShader on Apple Silicon breaks canvas initialization.
+ */
+export const electronLaunchArgs = (
+  desktopDir: string,
+  userDataDir: string,
+  platform: NodeJS.Platform = process.platform
+): string[] => {
+  const gpuArgs = platform === 'linux'
+    ? [
+      '--ignore-gpu-blocklist',
+      '--enable-unsafe-swiftshader',
+      '--use-gl=angle',
+      '--use-angle=swiftshader'
+    ]
+    : []
+  return [...gpuArgs, desktopDir, '--user-data-dir', userDataDir]
+}
+
 const launchReport = async(options: CliOptions, slice: SliceDef): Promise<MeasureReport> => {
   const playwright = await import('playwright')
   const started = Date.now()
@@ -179,20 +200,11 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
   env.MARKTEXT_MIGRATION_ENV = 'prod'
   if (options.flag) env.MARKTEXT_MIGRATION_OVERRIDES = `${slice.flag}=${options.flag}`
 
+  const desktopDir = path.join(repoRoot, 'packages/desktop')
   const app = await playwright._electron.launch({
     executablePath: electronPath(),
-    // Xvfb has no hardware GPU. GPUI's web backend needs WebGL2, which Chromium
-    // only provides here through SwiftShader.
-    args: [
-      '--ignore-gpu-blocklist',
-      '--enable-unsafe-swiftshader',
-      '--use-gl=angle',
-      '--use-angle=swiftshader',
-      path.join(repoRoot, 'packages/desktop'),
-      '--user-data-dir',
-      userDataDir
-    ],
-    cwd: path.join(repoRoot, 'packages/desktop'),
+    args: electronLaunchArgs(desktopDir, userDataDir),
+    cwd: desktopDir,
     env,
     timeout: 30000
   })

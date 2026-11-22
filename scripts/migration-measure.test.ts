@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareReports, isPanePainted, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
+import { compareReports, electronLaunchArgs, isPanePainted, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
 
 const report = (phase: MeasureReport['phase'], startup: number, memory: number): MeasureReport => ({
   slice: 'A1',
@@ -61,4 +61,14 @@ test('compareReports subtracts the legacy baseline', () => {
   const delta = compareReports(report('before', 800, 100), report('after', 900, 120))
   assert.equal(delta.startupLatencyMs, 100)
   assert.equal(delta.memoryRssMb, 20)
+})
+
+test('electronLaunchArgs uses SwiftShader only on Linux so macOS uses Metal WebGL2', () => {
+  const linuxArgs = electronLaunchArgs('/app/desktop', '/tmp/ud', 'linux')
+  assert.equal(linuxArgs.includes('--use-angle=swiftshader'), true)
+  assert.equal(linuxArgs.includes('--enable-unsafe-swiftshader'), true)
+
+  const macArgs = electronLaunchArgs('/app/desktop', '/tmp/ud', 'darwin')
+  assert.equal(macArgs.includes('--use-angle=swiftshader'), false)
+  assert.deepEqual(macArgs, ['/app/desktop', '--user-data-dir', '/tmp/ud'])
 })
