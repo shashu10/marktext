@@ -1,6 +1,6 @@
 //! Single-canvas router. The Electron iframe posts `HostToGuest` messages and
-//! this view answers with `GuestToHost`. Preference panes mount here as their
-//! crates land; unmigrated panes still use the placeholder.
+//! this view answers with `GuestToHost`. Migrated preference panes are mounted
+//! here; other panes still use the placeholder until their crates land.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -10,12 +10,14 @@ use marktext_core::{GuestSession, GuestToHost, HostBridge, HostToGuest};
 use marktext_ui_kit::setting_row;
 use mt_pref_files::FilesPane;
 use mt_pref_general::GeneralPane;
+use mt_pref_markdown::MarkdownPane;
 use serde_json::Value;
 
 pub struct HostView {
     session: GuestSession,
     general: gpui::Entity<GeneralPane>,
     files: gpui::Entity<FilesPane>,
+    markdown: gpui::Entity<MarkdownPane>,
 }
 
 impl HostView {
@@ -31,16 +33,24 @@ impl HostView {
         });
         let files = cx.new(|_cx| {
             FilesPane::new(
-                bridge,
+                Arc::clone(&bridge),
                 Rc::new(publish_preference),
                 Rc::new(publish_persist),
                 Rc::new(publish_choose_directory),
+            )
+        });
+        let markdown = cx.new(|_cx| {
+            MarkdownPane::new(
+                bridge,
+                Rc::new(publish_preference),
+                Rc::new(publish_persist),
             )
         });
         Self {
             session,
             general,
             files,
+            markdown,
         }
     }
 
@@ -59,6 +69,9 @@ impl HostView {
                 self.files.update(cx, |pane, cx| {
                     pane.accept_persist_result(request_id, persisted, cx);
                 });
+                self.markdown.update(cx, |pane, cx| {
+                    pane.accept_persist_result(request_id, persisted, cx);
+                });
                 return None;
             }
             HostToGuest::DirectoryChosen { id, path } => {
@@ -74,6 +87,7 @@ impl HostView {
         let reply = self.session.apply(message);
         self.general.update(cx, |_pane, cx| cx.notify());
         self.files.update(cx, |_pane, cx| cx.notify());
+        self.markdown.update(cx, |_pane, cx| cx.notify());
         reply
     }
 }
@@ -84,6 +98,7 @@ impl Render for HostView {
         let content: AnyElement = match self.session.active_pane() {
             "general" => self.general.clone().into_any_element(),
             "files" => self.files.clone().into_any_element(),
+            "markdown" => self.markdown.clone().into_any_element(),
             _ => placeholder(self).into_any_element(),
         };
         div().size_full().child(content)

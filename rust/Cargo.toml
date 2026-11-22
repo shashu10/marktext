@@ -6,6 +6,7 @@ members = [
     "crates/marktext-wasm-host",
     "crates/mt-pref-general",
     "crates/mt-pref-files",
+    "crates/mt-pref-markdown",
 ]
 
 [workspace.package]
