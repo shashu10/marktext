@@ -3401,6 +3401,7 @@ dependencies = [
  "mt-pref-appearance",
  "mt-pref-editor",
  "mt-pref-general",
+ "mt-pref-keybindings",
  "mt-pref-markdown",
  "serde-wasm-bindgen",
  "serde_json",
@@ -3535,6 +3536,18 @@ dependencies = [
  "gpui_ce_elements",
  "marktext-core",
  "marktext-ui-kit",
+ "serde_json",
+]
+
+[[package]]
+name = "mt-pref-keybindings"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "marktext-core",
+ "marktext-ui-kit",
+ "serde",
  "serde_json",
 ]
 

@@ -3,6 +3,16 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// One row on the Keybindings preferences pane (`prefs.pane.keybindings`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeybindingEntry {
+    pub id: String,
+    pub description: String,
+    pub accelerator: String,
+    #[serde(rename = "defaultAccelerator")]
+    pub default_accelerator: String,
+}
+
 /// Messages the Electron `<GpuiPaneHost>` posts into the iframe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -29,6 +39,32 @@ pub enum HostToGuest {
     /// Answer to `SPELLCHECKER_REMOVE_WORD`.
     #[serde(rename = "SPELLCHECKER_REMOVE_RESULT")]
     SpellcheckerRemoveResult { id: u64, ok: bool },
+    /// Full keybinding list for the Keybindings pane. Additive for A7.
+    #[serde(rename = "KEYBINDINGS")]
+    Keybindings {
+        commands: Vec<KeybindingEntry>,
+        #[serde(rename = "isMac", default)]
+        is_mac: bool,
+        #[serde(rename = "showDebug", default)]
+        show_debug: bool,
+        #[serde(default)]
+        loading: bool,
+        #[serde(rename = "loadError", default)]
+        load_error: bool,
+    },
+    /// Answer to `SAVE_KEYBINDING` / `RESET_ALL_KEYBINDINGS`.
+    /// `status` is `persisted`, `failed`, or `conflict`.
+    #[serde(rename = "KEYBINDING_RESULT")]
+    KeybindingResult {
+        id: u64,
+        status: String,
+        #[serde(default)]
+        commands: Option<Vec<KeybindingEntry>>,
+        #[serde(rename = "conflictAccelerator", default)]
+        conflict_accelerator: Option<String>,
+        #[serde(rename = "conflictCommandIds", default)]
+        conflict_command_ids: Option<Vec<String>>,
+    },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -56,6 +92,21 @@ pub enum GuestToHost {
     /// Ask Electron to remove a personal dictionary word.
     #[serde(rename = "SPELLCHECKER_REMOVE_WORD")]
     SpellcheckerRemoveWord { id: u64, word: String },
+    /// Ask the Vue host to load (or reload) keybindings and post `KEYBINDINGS`.
+    #[serde(rename = "REQUEST_KEYBINDINGS")]
+    RequestKeybindings,
+    /// Persist one binding. Empty `accelerator` unbinds. Round-trips via `KEYBINDING_RESULT`.
+    #[serde(rename = "SAVE_KEYBINDING")]
+    SaveKeybinding {
+        id: u64,
+        #[serde(rename = "commandId")]
+        command_id: String,
+        accelerator: String,
+    },
+    #[serde(rename = "RESET_ALL_KEYBINDINGS")]
+    ResetAllKeybindings { id: u64 },
+    #[serde(rename = "KEYBINDING_DEBUG_DUMP")]
+    KeybindingDebugDump,
 }
 
 #[cfg(test)]

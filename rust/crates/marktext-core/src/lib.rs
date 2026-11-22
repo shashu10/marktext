@@ -9,7 +9,7 @@ mod session;
 mod tokens;
 
 pub use bridge::{HostBridge, MemoryHostBridge};
-pub use messages::{GuestToHost, HostToGuest};
+pub use messages::{GuestToHost, HostToGuest, KeybindingEntry};
 pub use preferences::{
     PreferencesPatch, PreferencesSnapshot, is_known_preference_key, preference_defaults,
 };
