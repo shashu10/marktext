@@ -65,3 +65,9 @@ Clicking a category in the Rust sidebar highlighted the sidebar row, but Vue nev
 `imageFolderPath`, `currentUploader`, and `cliScript` arrive in the `PREFERENCES` snapshot from Pinia, but `MemoryHostBridge` only keeps keys from `schema.json`. The Images pane looked empty for the global folder even though Electron had a path.
 
 Keep those keys on the pane from the raw snapshot (`extract_user_data`). Write them with `HOST_ACTION` (`set-user-data`, `ask-image-folder`, probes, open path/url), not `SET_PREFERENCE`. Seed `EditableTextState` from the pane copy on first paint; an empty draft does not mean the host has no value.
+
+## `mt-pref-app` deadlocks before opening a window on macOS (W2.A)
+
+On macOS, `mt-pref-app` launched as a background process with no window and never emitted `READY`.
+
+In `gpui_ce_macos` 0.3.0, `did_finish_launching` invokes the `Application::run` callback inside `if let Some(callback) = platform.0.lock().finish_launching.take() { callback(); }`, holding `platform.0`'s mutex guard until the callback returns. Calling `marktext_ui_kit::init(cx)` (which registers `on_system_notification_response`) or `open_window` synchronously inside `Application::run` re-locks `platform.0` on the main thread and deadlocks. Defer startup onto the next foreground turn with `cx.spawn(async move |cx| { cx.update(|cx| { ... }); }).detach()` so `did_finish_launching` drops the lock first.
