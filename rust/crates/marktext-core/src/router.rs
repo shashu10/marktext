@@ -40,7 +40,8 @@ impl PaneRouter {
             | HostToGuest::SpellcheckerInfo { .. }
             | HostToGuest::SpellcheckerRemoveResult { .. }
             | HostToGuest::Keybindings { .. }
-            | HostToGuest::KeybindingResult { .. } => None,
+            | HostToGuest::KeybindingResult { .. }
+            | HostToGuest::ActiveCategory { .. } => None,
         }
     }
 }

@@ -5,6 +5,7 @@
   >
     <title-bar v-if="showCustomTitleBar" />
     <gpui-pane-host
+      class="pref-sidebar-host"
       flag-key="prefs.sidebar"
       pane="sidebar"
     >
@@ -72,8 +73,17 @@ onMounted(() => {
   display: flex;
   background: var(--editorBgColor);
 
-  &.is-mac .pref-sidebar {
+  &.is-mac .pref-sidebar,
+  &.is-mac .pref-sidebar-host {
     padding-top: var(--titleBarHeight);
+  }
+
+  & .pref-sidebar-host {
+    /* Override .gpui-pane-host { flex: 1 } so the sidebar stays 220px. */
+    flex: 0 0 var(--prefSideBarWidth);
+    width: var(--prefSideBarWidth);
+    height: 100vh;
+    box-sizing: border-box;
   }
 
   & h1,

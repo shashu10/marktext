@@ -15,6 +15,7 @@ use mt_pref_general::GeneralPane;
 use mt_pref_images::ImagesPane;
 use mt_pref_keybindings::{KeybindingHostRequest, KeybindingsPane};
 use mt_pref_markdown::MarkdownPane;
+use mt_pref_shell::PrefShellPane;
 use serde_json::Value;
 
 /// Each pane numbers its own saves from 1. Appearance ids are shifted so a
@@ -30,6 +31,7 @@ pub struct HostView {
     markdown: gpui::Entity<MarkdownPane>,
     images: gpui::Entity<ImagesPane>,
     keybindings: gpui::Entity<KeybindingsPane>,
+    shell: gpui::Entity<PrefShellPane>,
 }
 
 impl HostView {
@@ -81,6 +83,14 @@ impl HostView {
             )
         });
         let keybindings = cx.new(|cx| KeybindingsPane::new(Rc::new(publish_keybinding), cx));
+        let shell = cx.new(|cx| {
+            PrefShellPane::new(
+                Rc::new(publish_host_action),
+                Rc::new(request_keybindings),
+                false,
+                cx,
+            )
+        });
         Self {
             session,
             general,
@@ -90,6 +100,7 @@ impl HostView {
             markdown,
             images,
             keybindings,
+            shell,
         }
     }
 
@@ -178,6 +189,19 @@ impl HostView {
                 self.keybindings.update(cx, |pane, cx| {
                     pane.apply_snapshot(commands, *is_mac, *show_debug, *loading, *load_error, cx);
                 });
+                let commands = commands.clone();
+                let is_mac = *is_mac;
+                let loading = *loading;
+                self.shell.update(cx, |pane, cx| {
+                    pane.apply_keybindings(commands, is_mac, loading, cx);
+                });
+                return None;
+            }
+            HostToGuest::ActiveCategory { category } => {
+                let category = category.clone();
+                self.shell.update(cx, |pane, cx| {
+                    pane.set_active_category(&category, cx);
+                });
                 return None;
             }
             HostToGuest::KeybindingResult {
@@ -209,6 +233,7 @@ impl HostView {
         self.markdown.update(cx, |_pane, cx| cx.notify());
         self.images.update(cx, |_pane, cx| cx.notify());
         self.keybindings.update(cx, |_pane, cx| cx.notify());
+        self.shell.update(cx, |_pane, cx| cx.notify());
         reply
     }
 
@@ -234,6 +259,7 @@ impl Render for HostView {
             "markdown" => self.markdown.clone().into_any_element(),
             "images" => self.images.clone().into_any_element(),
             "keybindings" => self.keybindings.clone().into_any_element(),
+            "sidebar" => self.shell.clone().into_any_element(),
             _ => placeholder(self, cx).into_any_element(),
         };
         div().size_full().child(content)
@@ -289,6 +315,11 @@ fn publish_keybinding(request: KeybindingHostRequest) {
     {
         let _ = request;
     }
+}
+
+fn request_keybindings() {
+    #[cfg(target_family = "wasm")]
+    post_to_parent(&GuestToHost::RequestKeybindings);
 }
 
 /// Stage 1 transport for a pane write. Native builds keep the value in the bridge only.

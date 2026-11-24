@@ -75,6 +75,9 @@ pub enum HostToGuest {
         #[serde(rename = "conflictCommandIds", default)]
         conflict_command_ids: Option<Vec<String>>,
     },
+    /// Active preferences category for the sidebar shell (`prefs.sidebar`).
+    #[serde(rename = "ACTIVE_CATEGORY")]
+    ActiveCategory { category: String },
 }
 
 /// Messages the GPUI guest posts back to the Vue host.

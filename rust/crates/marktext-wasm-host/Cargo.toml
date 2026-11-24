@@ -17,6 +17,7 @@ mt-pref-files = { path = "../mt-pref-files" }
 mt-pref-markdown = { path = "../mt-pref-markdown" }
 mt-pref-images = { path = "../mt-pref-images" }
 mt-pref-keybindings = { path = "../mt-pref-keybindings" }
+mt-pref-shell = { path = "../mt-pref-shell" }
 gpui.workspace = true
 gpui_platform.workspace = true
 gpui_elements.workspace = true
