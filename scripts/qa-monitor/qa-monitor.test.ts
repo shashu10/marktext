@@ -18,6 +18,7 @@ import {
 } from './issue-filer.ts'
 import { buildQaAuditPrompt } from './prompt.ts'
 import {
+  BASE_LABELS,
   normalizeFingerprint,
   parseAuditReportFromText,
   validateAuditReport,
@@ -49,6 +50,20 @@ test('normalizeFingerprint prefixes slice and produces stable kebab slugs', () =
   assert.equal(normalizeFingerprint('A1', 'Cannot Scroll Pane!'), 'a1:cannot-scroll-pane')
   assert.equal(normalizeFingerprint('A1', 'a1:already-prefixed'), 'a1:already-prefixed')
   assert.equal(normalizeFingerprint('A1', '   '), 'a1:unnamed-regression')
+})
+
+test('base labels fit the GitHub description limit', () => {
+  for (const label of BASE_LABELS) {
+    assert.ok(label.description.length <= 100, `${label.name} exceeds the 100-character limit`)
+  }
+})
+
+test('W2.A findings keep the same fingerprint across issue filing and later audits', () => {
+  const slug = 'prefs:cold-pane-paint-over-2x'
+  const expected = `w2.a:${slug}`
+  assert.equal(normalizeFingerprint('W2.A', slug), expected)
+  assert.equal(normalizeFingerprint('W2.A', expected), expected)
+  assert.equal(extractFingerprintFromBody(`<!-- qa-fingerprint: ${expected} -->`), expected)
 })
 
 test('validateAuditReport sorts findings P0 -> P3 and rejects invalid severities', () => {

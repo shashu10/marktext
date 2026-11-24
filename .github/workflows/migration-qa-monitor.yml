@@ -62,17 +62,17 @@ jobs:
           set -euo pipefail
           REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-          HEAD_SHA=$(git ls-remote "$REPO_URL" refs/heads/develop | awk '{print $1}')
-          BASE_SHA=$(git ls-remote "$REPO_URL" refs/tags/qa/last-audited | awk '{print $1}' || true)
+          REFS=$(git ls-remote --refs "$REPO_URL" refs/heads/develop refs/tags/qa/last-audited)
+          HEAD_SHA=$(awk '$2 == "refs/heads/develop" {print $1}' <<< "$REFS")
+          BASE_SHA=$(awk '$2 == "refs/tags/qa/last-audited" {print $1}' <<< "$REFS")
+
+          if [ -z "$HEAD_SHA" ]; then
+            echo "::error::Could not resolve refs/heads/develop"
+            exit 1
+          fi
 
           echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
           echo "base_sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
-
-          if [ -z "$HEAD_SHA" ]; then
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=Could not resolve refs/heads/develop" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
 
           if [ "$FORCE_RUN" = "true" ] || [ "$TARGET_SLICE" != "auto" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
@@ -99,15 +99,17 @@ jobs:
           cd gate-repo
           git remote add origin "$REPO_URL"
           git fetch -q --filter=blob:none --no-tags origin "$HEAD_SHA" "$BASE_SHA"
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(rust/|packages/desktop/src/|packages/muya/src/|scripts/migration-measure\.ts|docs/migration/(STATUS\.md|slices\.json))$'; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=Detected app/migration changes in ${BASE_SHA:0:8}..${HEAD_SHA:0:8}" >> "$GITHUB_OUTPUT"
-          else
+          if git diff --quiet --no-renames "$BASE_SHA" "$HEAD_SHA" -- \
+            rust/ packages/desktop/src/ packages/muya/src/ \
+            scripts/migration-measure.ts docs/migration/STATUS.md docs/migration/slices.json; then
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             echo "reason=New commits in ${BASE_SHA:0:8}..${HEAD_SHA:0:8} did not touch app/migration paths" >> "$GITHUB_OUTPUT"
             echo "Only non-app paths changed — skipping QA agent spin-up."
+          else
+            diff_status=$?
+            if [ "$diff_status" -ne 1 ]; then exit "$diff_status"; fi
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=Detected app/migration changes in ${BASE_SHA:0:8}..${HEAD_SHA:0:8}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Write gate summary
@@ -119,22 +121,17 @@ jobs:
             echo "- **Range:** \`${{ steps.gate.outputs.base_sha || 'baseline' }}\` → \`${{ steps.gate.outputs.head_sha }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ---------------------------------------------------------------------------
-  # Job 2: QA / TPM Regression Audit (only spins up when Job 1 detects changes)
-  # Uses @cursor/sdk to launch a read-only Cursor Cloud Agent VM built from
-  # `.cursor/environment.json`, compares Legacy vs. Migrated slices, applies
-  # the P0-P3 severity rubric, and files deduplicated GitHub Issues.
-  # ---------------------------------------------------------------------------
   qa-audit:
-    name: Run QA/TPM Regression Audit & File Issues
+    name: Run Cursor QA audit
     needs: check-changes
     if: needs.check-changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
-      issues: write
-      pull-requests: read
+      contents: read
+      issues: read
+    outputs:
+      report_id: ${{ steps.save-report.outputs.artifact-id }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -161,37 +158,90 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          AUDIT_RUNTIME: ${{ inputs.runtime || 'cloud' }}
+          AUDIT_HEAD: ${{ needs.check-changes.outputs.head_sha }}
+          AUDIT_BASE: ${{ needs.check-changes.outputs.base_sha }}
+          AUDIT_SLICE: ${{ inputs.slice || 'auto' }}
+          AUDIT_FORCE: ${{ inputs.force || 'false' }}
+          AUDIT_MODEL: ${{ inputs.model }}
         run: |
           set -euo pipefail
           ARGS=(
-            "--runtime" "${{ inputs.runtime || 'cloud' }}"
-            "--repo" "${{ github.repository }}"
-            "--head-sha" "${{ needs.check-changes.outputs.head_sha }}"
-            "--slice" "${{ inputs.slice || 'auto' }}"
-            "--out" "/tmp/qa-audit-telemetry.json"
+            --runtime "$AUDIT_RUNTIME"
+            --repo "$GITHUB_REPOSITORY"
+            --head-sha "$AUDIT_HEAD"
+            --slice "$AUDIT_SLICE"
+            --report-only
+            --report-out qa-output/audit-report.json
+            --out qa-output/telemetry.json
           )
-
-          if [ -n "${{ needs.check-changes.outputs.base_sha }}" ]; then
-            ARGS+=("--base-sha" "${{ needs.check-changes.outputs.base_sha }}")
-          fi
-          if [ "${{ inputs.force || 'false' }}" = "true" ]; then
-            ARGS+=("--force")
-          fi
-          if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
-            ARGS+=("--dry-run")
-          fi
-          if [ -n "${{ inputs.model || '' }}" ]; then
-            ARGS+=("--model" "${{ inputs.model }}")
-          fi
+          if [ -n "$AUDIT_BASE" ]; then ARGS+=(--base-sha "$AUDIT_BASE"); fi
+          if [ "$AUDIT_FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$AUDIT_MODEL" ]; then ARGS+=(--model "$AUDIT_MODEL"); fi
 
           node --no-warnings scripts/qa-monitor/run-qa-monitor.ts "${ARGS[@]}"
 
+      - name: Save completed audit before filing
+        id: save-report
+        if: ${{ !cancelled() && hashFiles('qa-output/audit-report.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-audit-report-${{ github.run_id }}
+          path: qa-output/audit-report.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  file-findings:
+    name: File findings from saved audit
+    needs: [check-changes, qa-audit]
+    if: needs.qa-audit.outputs.report_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-changes.outputs.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-audit-report-${{ github.run_id }}
+          path: qa-output
+
+      - name: File findings or preview the report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUDIT_HEAD: ${{ needs.check-changes.outputs.head_sha }}
+          AUDIT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          ARGS=(--replay qa-output/audit-report.json --repo "$GITHUB_REPOSITORY"
+                --head-sha "$AUDIT_HEAD" --out qa-output/telemetry.json)
+          if [ "$AUDIT_DRY_RUN" = "true" ]; then ARGS+=(--dry-run); fi
+          node --no-warnings scripts/qa-monitor/run-qa-monitor.ts "${ARGS[@]}"
+
       - name: Publish QA Audit Summary
-        if: always() && hashFiles('/tmp/qa-audit-telemetry.json') != ''
+        id: summary
+        if: ${{ !cancelled() && hashFiles('qa-output/telemetry.json') != '' }}
+        env:
+          AUDIT_HEAD: ${{ needs.check-changes.outputs.head_sha }}
         run: |
           node --no-warnings -e '
             const fs = require("node:fs")
-            const data = JSON.parse(fs.readFileSync("/tmp/qa-audit-telemetry.json", "utf8"))
+            const data = JSON.parse(fs.readFileSync("qa-output/telemetry.json", "utf8"))
+            const reported = new Set(data.slicesAudited.map(slice => slice.toUpperCase()))
+            const missing = data.targetSlices.filter(slice => !reported.has(slice.toUpperCase()))
+            const complete = !data.skipped && !data.dryRun && data.runStatus === "finished" &&
+              data.headSha === process.env.AUDIT_HEAD && data.repoSlug === process.env.GITHUB_REPOSITORY &&
+              data.targetSlices.length > 0 && missing.length === 0
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `audited=${complete}\n`)
             const lines = [
               "## Migration QA Monitor Report",
               "",
@@ -214,22 +264,28 @@ jobs:
                 lines.push(`| \`${item.severity}\` | \`${item.slice}\` | \`${item.status}\` | ${link} |`)
               }
             }
+            if (missing.length) {
+              lines.push("", "Incomplete coverage: " + missing.join(", "))
+              process.exitCode = 1
+            }
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n")
           '
 
-      - name: Upload QA telemetry artifact
-        if: always() && hashFiles('/tmp/qa-audit-telemetry.json') != ''
+      - name: Upload filing results
+        if: ${{ !cancelled() && hashFiles('qa-output/telemetry.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: qa-audit-telemetry-${{ github.run_number }}
-          path: /tmp/qa-audit-telemetry.json
+          name: qa-audit-telemetry-${{ github.run_number }}-${{ github.run_attempt }}
+          path: qa-output/telemetry.json
+          if-no-files-found: error
           retention-days: 30
 
       - name: Advance qa/last-audited watermark tag
-        if: success() && !inputs.dry_run
+        if: success() && !inputs.dry_run && (inputs.slice == '' || inputs.slice == 'auto') && steps.summary.outputs.audited == 'true'
+        env:
+          AUDITED_HEAD: ${{ needs.check-changes.outputs.head_sha }}
+          EXPECTED_BASE: ${{ needs.check-changes.outputs.base_sha }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f qa/last-audited "${{ needs.check-changes.outputs.head_sha }}"
-          git push origin refs/tags/qa/last-audited --force
+          ref=refs/tags/qa/last-audited
+          git push --force-with-lease="$ref:$EXPECTED_BASE" origin "$AUDITED_HEAD:$ref"

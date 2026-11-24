@@ -1,13 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  Agent,
-  CursorAgentError,
-  type AgentOptions,
-  type RunResult
-} from '@cursor/sdk'
+import type { AgentOptions, RunResult } from '@cursor/sdk'
 import {
   collectChangeAuditContext,
   resolveGitSha,
@@ -21,6 +18,7 @@ import {
 import { buildQaAuditPrompt } from './prompt.ts'
 import {
   parseAuditReportFromText,
+  validateAuditReport,
   type QaAuditReport,
   type SeverityLevel
 } from './rubric.ts'
@@ -37,7 +35,24 @@ export interface CliOptions {
   dryRun: boolean
   force: boolean
   checkOnly: boolean
+  reportOnly: boolean
   outPath: string | null
+  reportOutPath: string | null
+  replayPath: string | null
+}
+
+interface SavedAudit {
+  version: 1
+  startedAt?: string
+  finishedAt?: string
+  repoSlug: string
+  headSha: string
+  baseSha: string | null
+  runtime: QaRuntime
+  agentId: string
+  runId: string
+  targetSlices: string[]
+  report: QaAuditReport
 }
 
 export interface QaMonitorTelemetry {
@@ -50,6 +65,7 @@ export interface QaMonitorTelemetry {
   headSha: string
   skipped: boolean
   skipReason: string | null
+  targetSlices: string[]
   slicesAudited: string[]
   agentId: string | null
   runId: string | null
@@ -103,7 +119,10 @@ export function parseCliArgs(argv: string[], repoRoot: string): CliOptions {
   let dryRun = false
   let force = false
   let checkOnly = false
+  let reportOnly = false
   let outPath: string | null = null
+  let reportOutPath: string | null = null
+  let replayPath: string | null = null
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -142,6 +161,15 @@ export function parseCliArgs(argv: string[], repoRoot: string): CliOptions {
       case '--out':
         outPath = next()
         break
+      case '--report-only':
+        reportOnly = true
+        break
+      case '--report-out':
+        reportOutPath = next()
+        break
+      case '--replay':
+        replayPath = next()
+        break
       case '--dry-run':
         dryRun = true
         break
@@ -162,6 +190,16 @@ export function parseCliArgs(argv: string[], repoRoot: string): CliOptions {
     }
   }
 
+  if (reportOnly && (!reportOutPath || replayPath || checkOnly)) {
+    throw new Error('--report-only requires --report-out and cannot be combined with --replay or --check-only')
+  }
+  if (replayPath && (reportOutPath || checkOnly || force || slice !== 'auto' || baseSha)) {
+    throw new Error('--replay cannot be combined with audit selection or --report-out')
+  }
+  const reportPath = replayPath ?? reportOutPath
+  if (reportPath && outPath && resolve(reportPath) === resolve(outPath)) {
+    throw new Error('The audit report and --out telemetry must be different files')
+  }
   return {
     runtime,
     repoSlug,
@@ -172,7 +210,10 @@ export function parseCliArgs(argv: string[], repoRoot: string): CliOptions {
     dryRun,
     force,
     checkOnly,
-    outPath
+    reportOnly,
+    outPath,
+    reportOutPath,
+    replayPath
   }
 }
 
@@ -189,6 +230,9 @@ Options:
   --dry-run                Run QA audit and print findings without filing GitHub issues
   --force                  Bypass the no-change skip gate
   --check-only             Evaluate the change gate and print JSON without starting an agent
+  --report-only            Stop after saving --report-out, without filing issues or editing labels
+  --report-out <file.json> Save the full report before filing (default: temporary file)
+  --replay <file.json>     File a saved report for this repo and --head-sha without a new agent
   --out <file.json>        Write structured QA telemetry JSON to disk
 `)
 }
@@ -248,10 +292,36 @@ function emptySeverityCounts(): Record<SeverityLevel, number> {
   return { P0: 0, P1: 0, P2: 0, P3: 0 }
 }
 
-function writeTelemetry(outPath: string | null, telemetry: QaMonitorTelemetry): void {
-  if (!outPath) return
+function writeJson(outPath: string, data: SavedAudit | QaMonitorTelemetry): void {
   mkdirSync(dirname(outPath), { recursive: true })
-  writeFileSync(outPath, JSON.stringify(telemetry, null, 2) + '\n', 'utf8')
+  const temporary = `${outPath}.${randomUUID()}.tmp`
+  writeFileSync(temporary, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 })
+  renameSync(temporary, outPath)
+}
+
+function readSavedAudit(path: string, repoSlug: string, headSha: string): SavedAudit {
+  const saved = JSON.parse(readFileSync(path, 'utf8'))
+  if (saved?.version !== 1 || saved.repoSlug !== repoSlug || saved.headSha !== headSha) {
+    throw new Error(`Saved report must be version 1 for ${repoSlug} at ${headSha}`)
+  }
+  if (
+    (saved.runtime !== 'cloud' && saved.runtime !== 'local') ||
+    (saved.baseSha !== null && typeof saved.baseSha !== 'string') ||
+    typeof saved.agentId !== 'string' || !saved.agentId ||
+    typeof saved.runId !== 'string' || !saved.runId ||
+    !Array.isArray(saved.targetSlices) || !saved.targetSlices.every((id: unknown) => typeof id === 'string') ||
+    !Array.isArray(saved.report?.slicesAudited) || !Array.isArray(saved.report?.findings)
+  ) {
+    throw new Error('Invalid saved QA audit metadata or findings')
+  }
+  if (saved.startedAt !== undefined || saved.finishedAt !== undefined) {
+    const start = typeof saved.startedAt === 'string' ? Date.parse(saved.startedAt) : NaN
+    const end = typeof saved.finishedAt === 'string' ? Date.parse(saved.finishedAt) : NaN
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      throw new Error('Invalid saved QA audit timestamps')
+    }
+  }
+  return { ...saved, report: validateAuditReport(saved.report) }
 }
 
 async function runQaMonitor(): Promise<number> {
@@ -267,6 +337,13 @@ async function runQaMonitor(): Promise<number> {
 
   if (!headSha) {
     throw new Error('Could not resolve HEAD commit SHA')
+  }
+
+  if (options.replayPath) {
+    const saved = readSavedAudit(options.replayPath, options.repoSlug, headSha)
+    console.log(`[qa-monitor] Replaying audit ${saved.runId} for ${saved.repoSlug} at ${saved.headSha}`)
+    fileSavedAudit(repoRoot, options, saved, startedMs)
+    return 0
   }
 
   const baseSha = options.baseSha
@@ -307,6 +384,7 @@ async function runQaMonitor(): Promise<number> {
       headSha: context.headSha,
       skipped: true,
       skipReason: context.skipReason,
+      targetSlices: [],
       slicesAudited: [],
       agentId: null,
       runId: null,
@@ -319,7 +397,7 @@ async function runQaMonitor(): Promise<number> {
       summary: context.skipReason ?? 'Skipped — no relevant changes.',
       filedIssues: []
     }
-    writeTelemetry(options.outPath, telemetry)
+    if (options.outPath) writeJson(options.outPath, telemetry)
     return 0
   }
 
@@ -343,6 +421,7 @@ async function runQaMonitor(): Promise<number> {
   )
 
   const agentOptions = buildAgentOptions({ options, repoRoot, context, apiKey })
+  const { Agent, CursorAgentError } = await import('@cursor/sdk')
   let agent: Awaited<ReturnType<typeof Agent.create>> | null = null
   let runId: string | null
   let agentId: string | null
@@ -383,7 +462,7 @@ async function runQaMonitor(): Promise<number> {
     }
   }
 
-  if (!result || result.status !== 'finished') {
+  if (!result || result.status !== 'finished' || !agentId || !runId) {
     const reason = result?.error?.message ?? `status=${result?.status ?? 'unknown'}`
     console.error(`[qa-monitor] QA run did not finish cleanly: ${reason}`)
     return 2
@@ -402,19 +481,37 @@ async function runQaMonitor(): Promise<number> {
     return 2
   }
 
+  const saved: SavedAudit = {
+    version: 1,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    repoSlug: options.repoSlug,
+    baseSha: context.baseSha,
+    headSha: context.headSha,
+    runtime: options.runtime,
+    agentId,
+    runId,
+    targetSlices: context.targetSlices.map((slice) => slice.id),
+    report
+  }
+  const reportPath = options.reportOutPath ?? resolve(tmpdir(), `marktext-qa-${randomUUID()}.json`)
+  writeJson(reportPath, saved)
+  console.log(`[qa-monitor] Saved completed audit to ${reportPath}`)
+  if (options.reportOnly) return 0
+  fileSavedAudit(repoRoot, options, saved, startedMs)
+  return 0
+}
+
+function fileSavedAudit(repoRoot: string, options: CliOptions, saved: SavedAudit, startedMs: number): void {
+  const { report, repoSlug, headSha, baseSha, agentId, runId, runtime, targetSlices } = saved
+  const existingIssues = report.findings.length > 0
+    ? listOpenRegressionIssues(repoRoot, repoSlug, true)
+    : []
   const filedRecords = fileAuditFindings({
     repoRoot,
     report,
-    existingIssues: openIssues,
-    meta: {
-      repoSlug: options.repoSlug,
-      baseSha: context.baseSha,
-      headSha: context.headSha,
-      agentId,
-      runId,
-      runtime: options.runtime,
-      dryRun: options.dryRun
-    }
+    existingIssues,
+    meta: { repoSlug, baseSha, headSha, agentId, runId, runtime, dryRun: options.dryRun }
   })
 
   const severityCounts = emptySeverityCounts()
@@ -425,22 +522,23 @@ async function runQaMonitor(): Promise<number> {
   const issuesFiled = filedRecords.filter((r) => r.status === 'filed').length
   const duplicatesSkipped = filedRecords.filter((r) => r.status === 'skipped-duplicate').length
 
+  const startedAt = saved.startedAt ?? new Date(startedMs).toISOString()
+  const finishedAt = saved.finishedAt ?? new Date().toISOString()
   const telemetry: QaMonitorTelemetry = {
     startedAt,
-    finishedAt: new Date().toISOString(),
-    durationMs: Date.now() - startedMs,
-    runtime: options.runtime,
-    repoSlug: options.repoSlug,
-    baseSha: context.baseSha,
-    headSha: context.headSha,
+    finishedAt,
+    durationMs: Date.parse(finishedAt) - Date.parse(startedAt),
+    runtime,
+    repoSlug,
+    baseSha,
+    headSha,
     skipped: false,
     skipReason: null,
-    slicesAudited: report.slicesAudited.length > 0
-      ? report.slicesAudited
-      : context.targetSlices.map((s) => s.id),
+    targetSlices,
+    slicesAudited: report.slicesAudited,
     agentId,
     runId,
-    runStatus: result.status,
+    runStatus: 'finished',
     findingsTotal: report.findings.length,
     findingsBySeverity: severityCounts,
     issuesFiled,
@@ -459,7 +557,7 @@ async function runQaMonitor(): Promise<number> {
     }))
   }
 
-  writeTelemetry(options.outPath, telemetry)
+  if (options.outPath) writeJson(options.outPath, telemetry)
 
   console.log('\n[qa-monitor] === Audit Complete ===')
   console.log(`[qa-monitor] Summary: ${report.summary}`)
@@ -478,8 +576,6 @@ async function runQaMonitor(): Promise<number> {
       `  - [${rec.finding.severity}][${rec.finding.slice}] (${rec.status}) ${rec.finding.title}${suffix}`
     )
   }
-
-  return 0
 }
 
 const isEntrypoint =

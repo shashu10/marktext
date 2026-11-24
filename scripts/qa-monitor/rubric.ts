@@ -113,7 +113,7 @@ export const BASE_LABELS: LabelSpec[] = [
   ...Object.values(SEVERITY_RUBRIC).map((spec) => ({
     name: spec.label,
     color: spec.color,
-    description: `${spec.title}: ${spec.description}`
+    description: spec.title
   }))
 ]
 
@@ -130,16 +130,14 @@ export const VALID_CATEGORIES = new Set<RegressionCategory>([
 ])
 
 export function normalizeFingerprint(slice: string, raw: string): string {
-  const cleaned = raw
-    .toLowerCase()
+  const slicePrefix = `${slice.toLowerCase()}:`
+  const input = raw.trim().toLowerCase()
+  const slug = input.startsWith(slicePrefix) ? input.slice(slicePrefix.length) : input
+  const cleaned = slug
     .replace(/[^a-z0-9:_-]+/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-|-$/g, '')
-  const slicePrefix = `${slice.toLowerCase()}:`
-  if (!cleaned) {
-    return `${slicePrefix}unnamed-regression`
-  }
-  return cleaned.startsWith(slicePrefix) ? cleaned : `${slicePrefix}${cleaned}`
+  return `${slicePrefix}${cleaned || 'unnamed-regression'}`
 }
 
 export function sliceLabel(slice: string): LabelSpec {
