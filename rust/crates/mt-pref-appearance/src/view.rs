@@ -302,7 +302,7 @@ fn theme_section(
                 ThemeMode::Dark,
             ));
     } else {
-        column = column.child(mode_chips(view, theme_mode)).child(theme_list(
+        column = column.child(theme_mode_select(view, theme_mode)).child(theme_list(
             view,
             "theme",
             "Theme",
@@ -314,29 +314,29 @@ fn theme_section(
     column
 }
 
-fn mode_chips(view: &Entity<AppearancePane>, selected: ThemeMode) -> impl IntoElement {
-    let modes = [
-        (ThemeMode::All, "All"),
-        (ThemeMode::Light, "Light"),
-        (ThemeMode::Dark, "Dark"),
-    ];
-    let mut row = div().flex().gap_2();
-    for (mode, label) in modes {
-        let view = view.clone();
-        let active = mode == selected;
-        row = row.child(choice_button(
-            SharedString::from(format!("setting-theme-filter-{label}")),
-            label,
-            active,
-            move |_event, _window, app| {
-                view.update(app, |pane, cx| {
-                    pane.theme_mode = mode;
-                    cx.notify();
-                });
-            },
-        ));
-    }
-    row
+fn theme_mode_select(view: &Entity<AppearancePane>, selected: ThemeMode) -> impl IntoElement {
+    let current = match selected {
+        ThemeMode::All => "all",
+        ThemeMode::Light => "light",
+        ThemeMode::Dark => "dark",
+    };
+    let view = view.clone();
+    select_control(
+        "setting-theme-filter",
+        [("all", "All"), ("light", "Light"), ("dark", "Dark")],
+        current,
+        move |chosen, _window, app| {
+            let mode = match chosen.as_ref() {
+                "light" => ThemeMode::Light,
+                "dark" => ThemeMode::Dark,
+                _ => ThemeMode::All,
+            };
+            view.update(app, |pane, cx| {
+                pane.theme_mode = mode;
+                cx.notify();
+            });
+        },
+    )
 }
 
 fn theme_list(

@@ -13,6 +13,7 @@ use gpui::{
 use gpui_components::button::{Button, ButtonVariants};
 use gpui_components::group_box::{GroupBox, GroupBoxVariants};
 use gpui_components::label::Label;
+use gpui_components::menu::{DropdownMenu, PopupMenuItem};
 use gpui_components::switch::Switch;
 use gpui_components::{ActiveTheme, Disableable, Sizable, v_flex};
 use gpui_elements::editable_text::{EditableTextElement, text_area, text_input};
@@ -199,60 +200,73 @@ pub fn text_field(
     pref_text_input(id).placeholder(placeholder).w(px(280.))
 }
 
+/// Closed dropdown for a legacy `el-select`. The button shows the selected
+/// label. Choosing a menu item calls `on_change` with that option's value.
 pub fn select_control(
     id_prefix: impl Into<SharedString>,
     options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
     selected: impl Into<SharedString>,
     on_change: impl Fn(SharedString, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    select_buttons(id_prefix, options, selected, false, on_change)
+    dropdown_select(id_prefix, options, selected, false, on_change)
 }
 
-/// Same choices as [`select_control`], drawn disabled. Clicks are ignored.
+/// Same choices as [`select_control`], drawn disabled. The menu does not open.
 pub fn locked_select(
     id_prefix: impl Into<SharedString>,
     options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
     selected: impl Into<SharedString>,
 ) -> impl IntoElement {
-    select_buttons(id_prefix, options, selected, true, |_, _, _| {})
+    dropdown_select(id_prefix, options, selected, true, |_, _, _| {})
 }
 
-fn select_buttons(
+fn dropdown_select(
     id_prefix: impl Into<SharedString>,
     options: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<SharedString>)>,
     selected: impl Into<SharedString>,
     disabled: bool,
     on_change: impl Fn(SharedString, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let id_prefix = id_prefix.into();
+    let id = id_prefix.into();
     let selected = selected.into();
+    let options: Vec<(SharedString, SharedString)> = options
+        .into_iter()
+        .map(|(value, label)| (value.into(), label.into()))
+        .collect();
+    let current = options
+        .iter()
+        .find(|(value, _)| value == &selected)
+        .map(|(_, label)| label.clone())
+        .unwrap_or_else(|| selected.clone());
     let on_change = Rc::new(on_change);
-    let mut row = div()
-        .id(id_prefix.clone())
+    let mut button = Button::new(id)
+        .outline()
+        .small()
         .font_family(UI_FONT)
-        .flex()
-        .flex_wrap()
-        .gap_2();
-    for (index, (value, label)) in options.into_iter().enumerate() {
-        let value = value.into();
-        let label = label.into();
-        let active = value == selected;
-        let choose = Rc::clone(&on_change);
-        let choice = value.clone();
-        let mut button = choice_button(
-            SharedString::from(format!("{id_prefix}-{index}")),
-            label,
-            active,
-            move |_event, window, app| {
-                choose(choice.clone(), window, app);
-            },
-        );
-        if disabled {
-            button = button.disabled(true);
-        }
-        row = row.child(button);
+        .min_w(px(180.))
+        .label(current)
+        .dropdown_caret(true);
+    if disabled {
+        button = button.disabled(true);
     }
-    row
+    let menu_options = options;
+    let menu_selected = selected;
+    button.dropdown_menu(move |menu, _, _| {
+        let on_change = Rc::clone(&on_change);
+        let mut menu = menu.scrollable(true).max_h(px(280.)).min_w(px(180.));
+        for (value, label) in &menu_options {
+            let choose = Rc::clone(&on_change);
+            let value = value.clone();
+            menu = menu.item(
+                PopupMenuItem::new(label.clone())
+                    .checked(value == menu_selected)
+                    .on_click(move |_event, window, app| {
+                        choose(value.clone(), window, app);
+                    }),
+            );
+        }
+        menu
+    })
 }
 
 pub fn slider_control(
@@ -396,4 +410,71 @@ impl Render for PanePlaceholder {
 
 fn marktext_core_label(pane: &str) -> String {
     format!("{pane} preferences")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{MouseButton, Render, TestApp, point, px};
+
+    use super::*;
+
+    struct Harness {
+        chosen: Rc<RefCell<String>>,
+        disabled: bool,
+    }
+
+    impl Render for Harness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let chosen = Rc::clone(&self.chosen);
+            let selected = chosen.borrow().clone();
+            div().size_full().child(if self.disabled {
+                locked_select("probe", [("a", "Alpha"), ("b", "Beta")], selected).into_any_element()
+            } else {
+                select_control(
+                    "probe",
+                    [("a", "Alpha"), ("b", "Beta")],
+                    selected,
+                    move |value, _, _| {
+                        *chosen.borrow_mut() = value.to_string();
+                    },
+                )
+                .into_any_element()
+            })
+        }
+    }
+
+    fn open(disabled: bool) -> (TestApp, gpui::TestAppWindow<Harness>, Rc<RefCell<String>>) {
+        let mut app = TestApp::new();
+        app.update(init);
+        let chosen = Rc::new(RefCell::new("a".to_string()));
+        let chosen_for_view = Rc::clone(&chosen);
+        let window = app.open_window(move |_window, _cx| Harness {
+            chosen: chosen_for_view,
+            disabled,
+        });
+        (app, window, chosen)
+    }
+
+    #[test]
+    fn choosing_a_menu_item_reports_its_value() {
+        let (_app, mut window, chosen) = open(false);
+        window.draw();
+        window.simulate_click(point(px(24.), px(12.)), MouseButton::Left);
+        window.draw();
+        window.simulate_click(point(px(40.), px(80.)), MouseButton::Left);
+        assert_eq!(chosen.borrow().as_str(), "b");
+    }
+
+    #[test]
+    fn a_locked_select_ignores_the_menu() {
+        let (_app, mut window, chosen) = open(true);
+        window.draw();
+        window.simulate_click(point(px(24.), px(12.)), MouseButton::Left);
+        window.draw();
+        window.simulate_click(point(px(40.), px(80.)), MouseButton::Left);
+        assert_eq!(chosen.borrow().as_str(), "a");
+    }
 }

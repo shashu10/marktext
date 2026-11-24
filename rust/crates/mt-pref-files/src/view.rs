@@ -3,13 +3,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    prelude::*, px,
+    AnyElement, App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled,
+    Window, div, prelude::*, px,
 };
 use marktext_core::{HostBridge, MemoryHostBridge};
 use marktext_ui_kit::{
-    UI_FONT, action_button, button_disabled, pref_error, pref_field, pref_page, pref_section,
-    select_control, toggle,
+    UI_FONT, action_button, button_disabled, locked_select, pref_error, pref_field, pref_page,
+    pref_section, select_control, toggle,
 };
 use serde_json::Value;
 
@@ -345,17 +345,18 @@ fn persist_choice_row(
     choices: &[Choice],
     selected: &str,
     saving: bool,
-) -> impl IntoElement {
-    let view = view.clone();
+) -> AnyElement {
     let options = choices.iter().map(|choice| (choice.value, choice.label));
+    if saving {
+        return locked_select(id, options, selected).into_any_element();
+    }
+    let view = view.clone();
     select_control(id, options, selected, move |chosen, _window, app| {
-        if saving {
-            return;
-        }
         view.update(app, |pane, cx| {
             pane.request_persist(single_change(key, Value::String(chosen.to_string())), cx);
         });
     })
+    .into_any_element()
 }
 
 fn bool_row(
