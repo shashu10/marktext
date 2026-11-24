@@ -22,6 +22,8 @@ import { WindowType } from '../windows/base'
 import { resolveExistingPath } from '../windows/projectRoots'
 import EditorWindow, { type FileOpenOptions } from '../windows/editor'
 import SettingWindow from '../windows/setting'
+import NativeSettingWindow from '../windows/nativeSetting'
+import { resolveFlag } from '../../shared/flags'
 import { setLanguage } from '../i18n'
 import { matchSupportedLanguage } from 'common/i18n'
 import { getNativeThemeSource, isDarkApplicationTheme } from './nativeTheme'
@@ -384,7 +386,27 @@ class App {
     return editor
   }
 
+  private _preferencesWindowMode(): 'legacy' | 'gpui-native' {
+    const mode = resolveFlag('window.preferences', {
+      overrideEnvironment: process.env.MARKTEXT_MIGRATION_ENV,
+      overridesRaw: process.env.MARKTEXT_MIGRATION_OVERRIDES,
+      // Main has no Vite `import.meta.env.DEV`; treat unpack/dev the same as renderer prod
+      // unless MARKTEXT_MIGRATION_ENV selects another table.
+      devBuild: false
+    })
+    return mode === 'gpui-native' ? 'gpui-native' : 'legacy'
+  }
+
   private _createSettingWindow(category?: string | null): void {
+    if (this._preferencesWindowMode() === 'gpui-native') {
+      const setting = new NativeSettingWindow(this._accessor)
+      setting.createWindow(category ?? null)
+      this._windowManager.add(setting)
+      if (this._windowManager.windowCount === 1 && setting.id != null) {
+        this._accessor.menu.setActiveWindow(setting.id)
+      }
+      return
+    }
     const setting = new SettingWindow(this._accessor)
     const nativeWindow = setting.createWindow(category ?? null)
     this._windowManager.add(setting)
@@ -524,7 +546,13 @@ class App {
   private _openSettingsWindow(category?: string | null): void {
     const settingWins = this._windowManager.getWindowsByType(WindowType.SETTINGS)
     if (settingWins.length >= 1) {
-      const browserSettingWindow = settingWins[0].win.browserWindow!
+      const existing = settingWins[0].win
+      if (existing instanceof NativeSettingWindow) {
+        existing.changeCategory(category ?? null)
+        existing.bringToFront()
+        return
+      }
+      const browserSettingWindow = existing.browserWindow!
       browserSettingWindow.webContents.send('settings::change-tab', category)
       if (isLinux) {
         browserSettingWindow.focus()
@@ -586,6 +614,12 @@ class App {
 
     onInternalChannel('app-create-settings-window', (category?: string) => {
       this._openSettingsWindow(category)
+    })
+
+    app.on('will-quit', () => {
+      for (const { win } of this._windowManager.getWindowsByType(WindowType.SETTINGS)) {
+        if (win instanceof NativeSettingWindow) win.destroy()
+      }
     })
 
     onInternalChannel(

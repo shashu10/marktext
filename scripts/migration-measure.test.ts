@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareReports, electronLaunchArgs, isPanePainted, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
+import { compareReports, electronLaunchArgs, isPanePainted, migrationOverridesFor, parseArgs, settingsCategoryForSlice, type MeasureReport } from './migration-measure.ts'
 
 const report = (phase: MeasureReport['phase'], startup: number, memory: number): MeasureReport => ({
   slice: 'A1',
@@ -10,8 +10,9 @@ const report = (phase: MeasureReport['phase'], startup: number, memory: number):
   startupLatencyMs: startup,
   paneSwitchLatencyMs: 40,
   memoryRssMb: { main: 10, renderer: memory, gpu: 5, total: 15 + memory },
+  nativeChildRssMb: null,
   idleCpuPercent: 1,
-  artifactSizeMb: { rendererJs: 7, wasm: null },
+  artifactSizeMb: { rendererJs: 7, wasm: null, nativePrefApp: null },
   screenshot: null
 })
 
@@ -35,7 +36,19 @@ test('parseArgs requires slice, phase, and out', () => {
 test('preference slices open their settings category', () => {
   assert.equal(settingsCategoryForSlice({ id: 'A1', flag: 'prefs.pane.general' }), 'general')
   assert.equal(settingsCategoryForSlice({ id: 'A8', flag: 'prefs.sidebar' }), 'general')
+  assert.equal(settingsCategoryForSlice({ id: 'W2.A', flag: 'window.preferences' }), 'general')
   assert.equal(settingsCategoryForSlice({ id: 'B1', flag: 'dialog.about' }), null)
+})
+
+test('W2.A Stage 1 measure forces every prefs pane onto rust-wasm', () => {
+  const overrides = migrationOverridesFor({ id: 'W2.A', flag: 'window.preferences' }, 'rust-wasm')
+  assert.match(overrides ?? '', /prefs.pane.general=rust-wasm/)
+  assert.match(overrides ?? '', /prefs.sidebar=rust-wasm/)
+  assert.match(overrides ?? '', /window.preferences=legacy/)
+  assert.equal(
+    migrationOverridesFor({ id: 'W2.A', flag: 'window.preferences' }, 'gpui-native'),
+    'window.preferences=gpui-native'
+  )
 })
 
 test('pane latency waits for a painted legacy page or a ready wasm canvas', () => {

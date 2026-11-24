@@ -39,6 +39,7 @@
     "gen-third-party": "tsx scripts/generateThirdPartyLicense.ts",
     "validate-licenses": "tsx scripts/validateLicenses.ts",
     "migration:build-wasm": "cargo build --manifest-path rust/Cargo.toml -p marktext-wasm-host --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir packages/desktop/src/renderer/public/gpui-host --out-name marktext-wasm-host \"${CARGO_TARGET_DIR:-rust/target}/wasm32-unknown-unknown/release/marktext-wasm-host.wasm\"",
+    "migration:build-native-pref": "cargo build --manifest-path rust/Cargo.toml -p mt-pref-app --release",
     "migration:progress": "node --no-warnings scripts/migration-progress.ts",
     "migration:measure": "node --no-warnings scripts/migration-measure.ts",
     "migration:qa-monitor": "node --no-warnings scripts/qa-monitor/run-qa-monitor.ts",

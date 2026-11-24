@@ -22,6 +22,14 @@ The iframe was loaded and the pane-ready attribute was set, but the canvas was b
 
 `load` fires before the WASM guest installs its `message` listener. The guest posts `READY` once it is listening. The Vue host must send `SET_PANE` and the snapshot again when `READY` arrives. Sending them only from `load` is not enough.
 
+## READY and HOST_HELLO must not bounce (W2.A)
+
+The native prefs sidecar posts `READY` once at startup. Echoing `HOST_HELLO` from that bootstrap makes `PaneRouter` reply `READY` again, and the host re-pushes forever. On Stage 2, answer the first `READY` with `SET_PANE` / snapshots only. Keep a one-shot bootstrap guard. `HOST_HELLO` is for Stage 1 iframe reconnect, not for the NDJSON launcher.
+
+## Empty accelerator is an unbind (W2.A)
+
+Keybinding user maps store `""` when the user clears a shortcut. Treating empty like a missing key restores the default. When displaying and when writing the next user map, keep `""` as a real value; only delete the entry when the accelerator equals the default.
+
 ## The settings page stops scrolling (A1)
 
 The scroll class lives on `<router-view>` and falls through onto `GpuiPaneHost`. That component sets `inheritAttrs: false`. A bare slot drops the class, so the page no longer scrolls. Keep the fallthrough attrs on a real element.

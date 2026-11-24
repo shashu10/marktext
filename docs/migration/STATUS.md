@@ -22,14 +22,14 @@
 
 | Slice ID | Preference Pane                     | Feature Flag Key         | Prerequisites | Legacy Source                                            | Target Rust Crate                 | Status      |
 | -------- | ----------------------------------- | ------------------------ | ------------- | -------------------------------------------------------- | --------------------------------- | ----------- |
-| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `in-review` |
-| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `in-review` |
-| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `in-review` |
-| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `in-review` |
-| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `in-review` |
-| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `in-review` |
-| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `in-review` |
-| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `in-review` |
+| `A1`     | General                             | `prefs.pane.general`     | `P0.3`        | `prefComponents/general/`                                | `rust/crates/mt-pref-general`     | `verified` |
+| `A2`     | Appearance & Theme                  | `prefs.pane.appearance`  | `P0.3`        | `prefComponents/theme/`, `general`, `editor`             | `rust/crates/mt-pref-appearance`  | `verified` |
+| `A3`     | Editor & Spellchecker               | `prefs.pane.editor`      | `P0.3`        | `prefComponents/editor/`, `spellchecker/`                | `rust/crates/mt-pref-editor`      | `verified` |
+| `A4`     | Files & Startup/Recovery            | `prefs.pane.files`       | `P0.3`        | `prefComponents/general/recoverySettings.vue`, `editor/` | `rust/crates/mt-pref-files`       | `verified` |
+| `A5`     | Markdown & Diagrams                 | `prefs.pane.markdown`    | `P0.3`        | `prefComponents/markdown/`                               | `rust/crates/mt-pref-markdown`    | `verified` |
+| `A6`     | Images & Uploader                   | `prefs.pane.images`      | `P0.3`        | `prefComponents/image/`                                  | `rust/crates/mt-pref-images`      | `verified` |
+| `A7`     | Keybindings & Recorder              | `prefs.pane.keybindings` | `P0.3`        | `prefComponents/keybindings/`                            | `rust/crates/mt-pref-keybindings` | `verified` |
+| `A8`     | Preferences Sidebar & Global Search | `prefs.sidebar`          | `P0.3`        | `prefComponents/sideBar/`, `registry.ts`                 | `rust/crates/mt-pref-shell`       | `verified` |
 
 ---
 
@@ -50,7 +50,7 @@
 
 | Slice ID | Component / Milestone                         | Feature Flag Key     | Prerequisites | Target                                        | Status    |
 | -------- | --------------------------------------------- | -------------------- | ------------- | --------------------------------------------- | --------- |
-| `W2.A`   | **Native GPUI Preferences Window Flip**       | `window.preferences` | `A1`–`A8`     | `rust/crates/mt-pref-app` + `NativeIpcBridge` | `blocked` |
+| `W2.A`   | **Native GPUI Preferences Window Flip**       | `window.preferences` | `A1`–`A8`     | `rust/crates/mt-pref-app` + `NativeIpcBridge` | `in-review` |
 | `C1`     | Title Bar (Breadcrumb, Save Dot, Controls)    | `chrome.titleBar`    | `P0.3`        | `rust/crates/mt-chrome-titlebar`              | `todo`    |
 | `C2`     | Tab Bar (Reorder, Dirty/Preview, Close)       | `chrome.tabBar`      | `P0.3`        | `rust/crates/mt-chrome-tabs`                  | `todo`    |
 | `C3`     | Left Sidebar — File Tree & Opened Files       | `sidebar.files`      | `P0.3`        | `rust/crates/mt-sidebar-files`                | `todo`    |
