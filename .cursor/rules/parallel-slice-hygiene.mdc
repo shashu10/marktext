@@ -1,0 +1,22 @@
+---
+description: Parallel Cloud Agent slice isolation, feature-flag safety, and PR governance rules
+globs: docs/migration/**,packages/desktop/src/shared/flags/**
+alwaysApply: false
+---
+
+# Parallel Slice Hygiene & Migration Governance
+
+## Parallel Agent Isolation
+- Check `docs/migration/STATUS.md` and `gh pr list --label migration` before claiming a slice so two agents never collide on the same slice or crate.
+- Never run `git stash`, `git reset --hard`, or cherry-pick/merge commits from another agent's branch or worktree.
+- Commit only files belonging to your claimed slice.
+
+## Feature Flags & Safe Rollback
+- Gate every migrated slice behind its feature flag (`legacy` | `rust-wasm` | `gpui-native` | `shadow`).
+- Always keep `prod` defaulted to `legacy` in `packages/desktop/src/shared/flags/environments.json` until explicit human rollout approval.
+- Verify `flag=legacy` rollback renders cleanly and leaves existing `preferences.json` and markdown files 100% intact.
+
+## Oracle Protection & Review Gate
+- Never delete, skip, or relax existing unit/E2E/conformance tests, stub failing functions, or apply CI waiver labels.
+- Never commit PR screenshots or recordings into tracked git paths; keep them in `/tmp/` or `/opt/cursor/artifacts/`.
+- Always target `develop`, tag `@shashu10` for human review, and **never self-merge**.

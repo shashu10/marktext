@@ -302,7 +302,14 @@ See `packages/website/content/docs/dev/IPC.md` for conventions and examples.
 
 ## Cursor Cloud Specific Instructions
 
-This repository ships a custom Cloud Agent environment in `.cursor/environment.json` (Ubuntu 24.04 with Node 22, pnpm 10, `node-gyp`, Xvfb + Electron libs, Playwright Chromium, Rust stable + `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.130`, and Linux GPUI/Vulkan/X11/Wayland headers).
+This repository ships a custom Cloud Agent environment in `.cursor/environment.json` (Ubuntu 24.04 with Node 22, pnpm 10, `node-gyp`, Xvfb + Electron libs, `scrot`, `fonts-liberation`, `lld` fast linker, Rust stable + `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.130`, Linux GPUI/Vulkan/Mesa Lavapipe ICD, and pre-warmed Stage 1 WASM + Stage 2 native GPUI caches).
+
+- **Measured right-sized Cloud Agent container profile** (from live `W2.A` full-pipeline audit with 30% headroom): **4–5 vCPU**, **11–12 GiB RAM** (or **8 GiB** with `lld` + `debug = "line-tables-only"`), **50 GiB disk**, **≥1 GiB `/dev/shm`**, and **`CARGO_BUILD_JOBS=3`** (configured in `/home/ubuntu/.cargo/config.toml`).
+- **Project Skills & Scoped Rules:**
+  - `.cursor/skills/migrate-slice/SKILL.md` — full end-to-end migration slice workflow (Before baseline → early Draft PR → implementation → After metrics & rollback → review handoff).
+  - `.cursor/skills/verify-migration-slice/SKILL.md` — build, test, Xvfb/Lavapipe screenshot capture, visual inspection, and rollback verification loop.
+  - `.cursor/rules/rust-gpui-panes.mdc` — auto-applies on `rust/**/*.rs` (GPUI portability, `HostBridge`, `serde_wasm_bindgen`, TS-to-Rust traps).
+  - `.cursor/rules/parallel-slice-hygiene.mdc` — auto-applies on `docs/migration/**` and `packages/desktop/src/shared/flags/**` (parallel isolation, flag rollback safety, PR review gates).
 
 ### Rust / GPUI Incremental Migration Context (Read Before Starting Migration Work)
 
@@ -311,42 +318,18 @@ This fork is executing a **Strangler-Fig Electron → Rust (GPUI)** migration wh
 - `docs/migration/ARCHITECTURE.md` — measured subsystem map (`~104k LOC`), feature inventory, IPC/Pinia boundaries, and the Outline-click → Editor-scroll reference trace.
 - `docs/migration/MIGRATION_PLAN.md` — the Two-Stage **`gpui_web` (WASM in persistent `<iframe>`) → Native OS GPUI** strategy, `HostBridge` trait contract, `gpui_web` constraints, dependency DAG, and governance rules.
 - `docs/migration/STATUS.md` — live slice tracker (Slice ID, feature flag key, prerequisites, target crate, and status). Check your slice's prerequisites and update its status row in your PR.
-- `docs/migration/RUNBOOK.md` — **mandatory step-by-step execution protocol** for running a migration slice end-to-end (Before baseline → early Draft PR → implementation → After benchmark & screenshots → tag `@shashu10`).
-- `docs/migration/MEMORY.md` — constraints that took a debug loop on an earlier slice. Read it before implementing, and apply an entry only when it matches the pane. After the slice, add a lesson only when you had to investigate and the cause is not already recorded. A fix that was right on the first attempt does not belong there. Keep entries short so this file stays cheap to read.
-
-**Mandatory Cloud Agent Slice Sequence (See `docs/migration/RUNBOOK.md` for Full Template):**
-
-1. **Check prereqs & claim:** Verify slice prerequisites in `STATUS.md` and check open `migration` PRs (`gh pr list --label migration`) to avoid parallel collisions; branch off `develop` and mark `in-progress`.
-2. **Capture "Before" baseline FIRST:** Build untouched legacy app and record startup/pane latency, Main+Renderer RSS memory, 5s idle CPU %, bundle size, and a Before screenshot in `/tmp/` (never commit PNGs to git).
-3. **Open a Draft PR early:** Push the `STATUS.md` claim and open a Draft PR (`--draft --base develop --label migration`) containing the **Before baseline table** and **Tentative Implementation Plan** so measurements survive context compaction and lock the slice.
-4. **Implement behind feature flag:** Build the Rust GPUI crate against `HostBridge` + `gpui-ce` (`default-features = false`), keep `prod` on `legacy`, and add Rust + IPC parity tests. Use the matching entries in `docs/migration/MEMORY.md`.
-5. **Verify & capture "After" metrics:** Run `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `cargo test`, `cargo clippy`, `wasm32` build, repeat the exact same measurements + After screenshot, verify `flag=legacy` rollback, and run `pnpm migration:progress --slice <slice-id>` to compute the exact `% migrated` delta (superseded legacy TS/Vue LOC ÷ total legacy TS/Vue LOC).
-6. **Finalize PR & request human review:** Fill in **Planned vs. Actually Implemented**, **Before vs. After scorecard** (honestly distinguishing Stage 1 WASM overhead guardrails vs. Stage 2 native ROI), the **`pnpm migration:progress` table**, and screenshot artifact links. If a constraint took investigation and is not already in `docs/migration/MEMORY.md`, add it there in this PR. Run `gh pr ready`, tag **`@shashu10`**, and **never self-merge**.
-
-**Key Migration Invariants for All Agents:**
-
-- **Write GPUI views once:** Target `gpui-ce` (`default-features = false`) + `gpui_ce_platform` (`default-features = false`) so every view compiles cleanly to both `wasm32-unknown-unknown` (Stage 1) and native OS GPUI (Stage 2) with no platform `#[cfg]` inside UI views. Keep crate dependencies strictly acyclic (`marktext-core` [UI-agnostic] → `marktext-ui-kit` → leaf `mt-*` crates → host crates).
-- **Route all host I/O through `HostBridge`:** Never bypass the shared preference/IPC bridge or mutate disconnected local state; preference writes must sync to Electron Main and broadcast to open Editor windows. Preserve 100% in-place compatibility with existing `preferences.json` and markdown files.
-- **Gate every slice behind a feature flag** (`legacy` | `rust-wasm` | `gpui-native` | `shadow`) and preserve parity in both WYSIWYG and Source Code modes where applicable.
-- **Translate first, redesign second:** Preserve exact legacy behavior, control types, and visual layout during porting; do not mix opportunistic UX redesigns or architectural refactors into a slice PR. Port the slice's full logic cleanly to Rust (do not leave half the behavior or I/O stranded in Vue/TS).
-- **Protect the oracle (no stubbing, no test weakening, no waivers):** Never delete, skip, or relax existing unit/E2E/conformance tests to make CI pass; never stub out failing functions or leave placeholder stand-in constants just to compile; never apply CI waiver/override labels. _If you need a paragraph-long comment to justify a workaround, the code is wrong — fix the code._
-- **Reuse `marktext-ui-kit` & wire keyboard navigation:** Browsers give text editing (selection, copy/paste, undo, IME), scroll views, and Tab focus traversal for free; GPUI does not. Always use shared `marktext-ui-kit` primitives and explicitly wire Tab/Shift-Tab focus order, Enter/Space activation, and Esc dismissal.
-- **Guard against TS/JS → Rust porting traps (compiling ≠ correct):**
-  - **JSON numeric types:** JS has one `number` type — pick `i64`/`u64` vs `f64` explicitly to match `schema.json` / IPC contracts so integers never serialize as `42.0` and fractional timings aren't truncated.
-  - **JS `||` truthiness vs Rust `Option`:** JS `err || "fallback"` replaces `""`, while Rust `Option::unwrap_or("fallback")` preserves `Some("")`; filter empty strings explicitly when porting JS `||` fallbacks.
-  - **No side effects inside `debug_assert!`:** `debug_assert!` is erased in `--release`; verify both debug and release builds.
-  - **Event loop, memory & OS subtleties:** Never block Electron's main/renderer event loop with heavy synchronous bridge work, avoid cloning large markdown buffers across the bridge, and set `CREATE_NO_WINDOW` when spawning Windows child processes (e.g., `ripgrep`, `pandoc`).
-- **Parallel agent git & worktree hygiene:** Never run `git stash`, `git reset --hard`, or read/merge commits from another agent's branch or worktree; commit only files belonging to your claimed slice.
+- `docs/migration/RUNBOOK.md` — **mandatory step-by-step execution protocol** for running a migration slice end-to-end (paired with `.cursor/skills/migrate-slice/SKILL.md`).
+- `docs/migration/MEMORY.md` — non-obvious runtime constraints from earlier slices. Read it before implementing and apply only entries matching your pane; add a new lesson only when investigation uncovered an unrecorded constraint.
 
 ### Cloud VM Verification & PR Rules
 
-- **Headless Electron E2E & visual QA:** Always wrap Electron/Playwright commands in `xvfb-run --auto-servernum`, e.g.:
+- **Headless Electron E2E & visual QA:** Always wrap Linux Electron/GPUI commands in `xvfb-run --auto-servernum`, e.g.:
+  - `xvfb-run --auto-servernum pnpm migration:measure --slice <SLICE_ID> --flag <legacy|rust-wasm|gpui-native> --out /tmp/out.json --screenshot /tmp/out.png`
   - `xvfb-run --auto-servernum pnpm test:e2e`
-  - `xvfb-run --auto-servernum pnpm -C packages/desktop exec playwright test test/e2e/launch.spec.ts`
 - **Native rebuilds:** Keep `USE_ELECTRON_CLANG=0` set if running `pnpm run rebuild-native` or `pnpm tsx scripts/postinstall.ts`.
-- **Rust / GPUI WASM builds:** Compile Stage 1 web panes with `cargo build --target wasm32-unknown-unknown --release` and emit JS/WASM bindings via `wasm-bindgen --target web`.
+- **Rust / GPUI builds:** Use `pnpm migration:build-wasm` (Stage 1 WASM + `wasm-bindgen` glue) and `pnpm migration:build-native-pref` (Stage 2 native `mt-pref-app`).
 - **PR & Governance rules for migration slices:**
   - Always open PRs targeting **`develop`** on this fork (never push directly to `develop` or auto-merge).
-  - Tag migration PRs with the `migration` label.
-  - Run `pnpm run lint`, `pnpm run typecheck`, `pnpm test:unit`, and relevant Rust/Playwright checks before finishing.
+  - Tag migration PRs with the `migration` label and request human review from `@shashu10`.
+  - Run `pnpm run lint`, `pnpm run typecheck`, `pnpm test:unit`, `cargo test --manifest-path rust/Cargo.toml`, and `cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings` before finishing.
   - Keep screenshot artifacts outside the tracked git tree and attach/upload them as PR evidence.

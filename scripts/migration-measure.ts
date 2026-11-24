@@ -115,18 +115,24 @@ const directoryBytes = (dir: string, extension: string): number => {
   return total
 }
 
+const cargoTargetDir = (): string => {
+  const configured = process.env.CARGO_TARGET_DIR?.trim()
+  return configured ? path.resolve(repoRoot, configured) : path.join(repoRoot, 'rust/target')
+}
+
 export const artifactSizes = (): MeasureReport['artifactSizeMb'] => {
+  const targetDir = cargoTargetDir()
   const rendererBytes = directoryBytes(
     path.join(repoRoot, 'packages/desktop/out/renderer/assets'),
     '.js'
   )
   const wasmBytes = directoryBytes(
-    path.join(repoRoot, 'rust/target/wasm32-unknown-unknown/release'),
+    path.join(targetDir, 'wasm32-unknown-unknown/release'),
     '.wasm'
   )
   const nativeBinary = [
-    path.join(repoRoot, 'rust/target/release/mt-pref-app'),
-    path.join(repoRoot, 'rust/target/debug/mt-pref-app')
+    path.join(targetDir, 'release/mt-pref-app'),
+    path.join(targetDir, 'debug/mt-pref-app')
   ].find(candidate => fs.existsSync(candidate))
   const nativeBytes = nativeBinary ? fs.statSync(nativeBinary).size : 0
   return {
@@ -340,9 +346,10 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
   if (overrides) env.MARKTEXT_MIGRATION_OVERRIDES = overrides
   if (options.flag === 'gpui-native') {
     env.VK_ICD_FILENAMES = env.VK_ICD_FILENAMES || '/usr/share/vulkan/icd.d/lvp_icd.json'
+    const targetDir = cargoTargetDir()
     const binary = [
-      path.join(repoRoot, 'rust/target/release/mt-pref-app'),
-      path.join(repoRoot, 'rust/target/debug/mt-pref-app')
+      path.join(targetDir, 'release/mt-pref-app'),
+      path.join(targetDir, 'debug/mt-pref-app')
     ].find(candidate => fs.existsSync(candidate))
     if (binary) env.MARKTEXT_PREF_APP = binary
   }
