@@ -1,0 +1,251 @@
+name: Issue Triage & Root-Cause Attribution
+
+on:
+  issues:
+    # Fires immediately when humans open or label a `bug` / `regression` issue.
+    types: [opened, labeled]
+  workflow_run:
+    # Zero-secret bridge: GitHub suppresses `on: issues` events created by GITHUB_TOKEN,
+    # so completing the decoupled QA Monitor triggers a sweep of untriaged regression issues.
+    workflows: ['Migration QA Regression Monitor']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Specific GitHub issue number to triage (e.g. 18)'
+        type: string
+        required: true
+      runtime:
+        description: 'Cursor Agent SDK runtime ("local" runs fast git forensics on this runner)'
+        type: choice
+        options:
+          - local
+          - cloud
+        default: local
+      force:
+        description: 'Re-triage even if a triage comment already exists or bug label is absent'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Analyze and preview routing without posting a comment or editing labels'
+        type: boolean
+        default: false
+      model:
+        description: 'Optional Cursor model ID override (default: composer-2.5)'
+        type: string
+        default: ''
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || inputs.issue_number || github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Cheap deterministic triage gate (~3s, $0 LLM cost).
+  # Resolves eligible untriaged issue number(s) before installing @cursor/sdk.
+  # ---------------------------------------------------------------------------
+  triage-gate:
+    name: Resolve Eligible Bug Issues
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      issues_json: ${{ steps.gate.outputs.issues_json }}
+      reason: ${{ steps.gate.outputs.reason }}
+    steps:
+      - name: Checkout repository (shallow for gate script)
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Evaluate triage eligibility
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ISSUE: ${{ github.event.issue.number || '' }}
+          INPUT_ISSUE: ${{ inputs.issue_number || '' }}
+          FORCE_RUN: ${{ inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            ISSUES=$(node --no-warnings scripts/issue-triage/run-triage.ts \
+              --find-untriaged --repo "$GITHUB_REPOSITORY" --limit 5)
+            COUNT=$(node -e 'console.log(JSON.parse(process.argv[1]).length)' "$ISSUES")
+            if [ "$COUNT" -gt 0 ]; then
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+              echo "issues_json=${ISSUES}" >> "$GITHUB_OUTPUT"
+              echo "reason=Found ${COUNT} untriaged bug/regression issue(s) after QA Monitor run" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              echo "issues_json=[]" >> "$GITHUB_OUTPUT"
+              echo "reason=No untriaged bug/regression issues found after QA Monitor run" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          TARGET_ISSUE="${INPUT_ISSUE:-$EVENT_ISSUE}"
+          if [ -z "$TARGET_ISSUE" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "issues_json=[]" >> "$GITHUB_OUTPUT"
+            echo "reason=No target issue number provided" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ARGS=(--issue "$TARGET_ISSUE" --repo "$GITHUB_REPOSITORY" --check-only)
+          if [ "$FORCE_RUN" = "true" ]; then ARGS+=(--force); fi
+          GATE_JSON=$(node --no-warnings scripts/issue-triage/run-triage.ts "${ARGS[@]}")
+          SHOULD_RUN=$(node -e 'console.log(JSON.parse(process.argv[1]).shouldRun)' "$GATE_JSON")
+          SKIP_REASON=$(node -e 'console.log(JSON.parse(process.argv[1]).skipReason || "Eligible bug/regression issue")' "$GATE_JSON")
+
+          if [ "$SHOULD_RUN" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "issues_json=[${TARGET_ISSUE}]" >> "$GITHUB_OUTPUT"
+            echo "reason=Issue #${TARGET_ISSUE} eligible for triage" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "issues_json=[]" >> "$GITHUB_OUTPUT"
+            echo "reason=${SKIP_REASON}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Read-only @cursor/sdk forensic triage (produces artifact only).
+  # Keeps CURSOR_API_KEY isolated from GitHub write permissions.
+  # ---------------------------------------------------------------------------
+  triage-analyze:
+    name: Analyze Issue #${{ matrix.issue_number }}
+    needs: triage-gate
+    if: needs.triage-gate.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      issues: read
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        issue_number: ${{ fromJson(needs.triage-gate.outputs.issues_json) }}
+    steps:
+      - name: Checkout full git history for attribution forensics
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install @cursor/sdk
+        run: npm install --no-save @cursor/sdk@^1.4.2
+
+      - name: Run read-only Cursor Triage Agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIAGE_RUNTIME: ${{ inputs.runtime || 'local' }}
+          TRIAGE_FORCE: ${{ inputs.force || 'false' }}
+          TRIAGE_MODEL: ${{ inputs.model || '' }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --issue "${{ matrix.issue_number }}"
+            --runtime "$TRIAGE_RUNTIME"
+            --repo "$GITHUB_REPOSITORY"
+            --report-only
+            --report-out "triage-output/issue-${{ matrix.issue_number }}.json"
+          )
+          if [ "$TRIAGE_FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$TRIAGE_MODEL" ]; then ARGS+=(--model "$TRIAGE_MODEL"); fi
+          node --no-warnings scripts/issue-triage/run-triage.ts "${ARGS[@]}"
+
+      - name: Upload triage analysis artifact
+        if: ${{ !cancelled() && hashFiles(format('triage-output/issue-{0}.json', matrix.issue_number)) != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: triage-report-${{ github.run_id }}-issue-${{ matrix.issue_number }}
+          path: triage-output/issue-${{ matrix.issue_number }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Deterministic owner routing & idempotent GitHub comment posting.
+  # Does NOT receive CURSOR_API_KEY; safe to re-run on GitHub API failures.
+  # ---------------------------------------------------------------------------
+  post-triage:
+    name: Post Triage Comment & Routing Labels
+    needs: [triage-gate, triage-analyze]
+    if: needs.triage-gate.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download triage analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: triage-report-${{ github.run_id }}-issue-*
+          path: triage-output
+          merge-multiple: true
+
+      - name: Post comments and apply deterministic routing labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIAGE_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=(triage-output/issue-*.json)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No triage analysis artifacts were produced."
+            exit 1
+          fi
+
+          for report in "${FILES[@]}"; do
+            base=$(basename "$report" .json)
+            ARGS=(
+              --replay "$report"
+              --repo "$GITHUB_REPOSITORY"
+              --out "triage-output/${base}-telemetry.json"
+            )
+            if [ "$TRIAGE_DRY_RUN" = "true" ]; then ARGS+=(--dry-run); fi
+            node --no-warnings scripts/issue-triage/run-triage.ts "${ARGS[@]}"
+          done
+
+      - name: Write triage workflow summary
+        run: |
+          node --no-warnings -e '
+            const fs = require("node:fs")
+            const path = require("node:path")
+            const dir = "triage-output"
+            const files = fs.readdirSync(dir).filter((f) => f.endsWith("-telemetry.json")).sort()
+            const lines = [
+              "## Issue Triage & Routing Summary",
+              "",
+              "| Issue | Routed Team | Slices | Suspect Commits | Confidence | Status |",
+              "| --- | --- | --- | --- | --- | --- |"
+            ]
+            for (const f of files) {
+              const t = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"))
+              const status = t.commentUrl ? `[${t.commentStatus}](${t.commentUrl})` : t.commentStatus
+              lines.push(`| #${t.issueNumber} | \`${t.routedTeam}\` | ${t.matchedSlices.join(", ") || "—"} | ${t.suspectCommitsCount} | \`${t.confidence}\` | ${status} |`)
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n")
+          '

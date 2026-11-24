@@ -1,0 +1,197 @@
+name: Legacy-to-Rust Parity Sync
+
+on:
+  push:
+    branches: [develop]
+    # Only wake a runner when legacy Electron/Vue or Muya paths are modified.
+    paths:
+      - 'packages/desktop/src/**'
+      - 'packages/muya/src/**'
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: 'Base commit SHA for diff (leave empty for HEAD~1)'
+        type: string
+        default: ''
+      head_sha:
+        description: 'Head commit SHA for diff (leave empty for HEAD)'
+        type: string
+        default: ''
+      slice:
+        description: 'Migrated slice ID (e.g. A1) or "auto"'
+        type: string
+        default: 'auto'
+      runtime:
+        description: 'Cursor Agent SDK runtime ("cloud" compiles & tests Rust in .cursor/environment.json)'
+        type: choice
+        options:
+          - cloud
+          - local
+        default: cloud
+      no_pr:
+        description: 'Run without autoCreatePR (analysis/branch only)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Detect parity drift and build prompts without starting a Cursor agent'
+        type: boolean
+        default: false
+      force:
+        description: 'Force sync even if the Rust crate was already modified in the same range'
+        type: boolean
+        default: false
+      model:
+        description: 'Optional Cursor model ID override (default: composer-2.5)'
+        type: string
+        default: ''
+
+concurrency:
+  group: legacy-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Ultra-cheap (~3s, $0) deterministic parity-drift gate.
+  # Only fires Job 2 if a migrated slice's legacyPaths changed without a
+  # matching Rust crate update in the same commit range.
+  # ---------------------------------------------------------------------------
+  detect-drift:
+    name: Detect Legacy-to-Rust Parity Drift
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      base_sha: ${{ steps.gate.outputs.base_sha }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+      slices_json: ${{ steps.gate.outputs.slices_json }}
+      reason: ${{ steps.gate.outputs.reason }}
+    steps:
+      - name: Checkout repository with history for diff range
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run deterministic drift check
+        id: gate
+        env:
+          EVENT_BEFORE: ${{ github.event.before || '' }}
+          EVENT_AFTER: ${{ github.event.after || '' }}
+          INPUT_BASE: ${{ inputs.base_sha || '' }}
+          INPUT_HEAD: ${{ inputs.head_sha || '' }}
+          INPUT_SLICE: ${{ inputs.slice || 'auto' }}
+          INPUT_FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="${INPUT_HEAD:-${EVENT_AFTER:-HEAD}}"
+          BASE_SHA="${INPUT_BASE:-$EVENT_BEFORE}"
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="${HEAD_SHA}~1"
+          fi
+
+          ARGS=(--base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" --slice "$INPUT_SLICE" --check-only)
+          if [ "$INPUT_FORCE" = "true" ]; then ARGS+=(--force); fi
+
+          GATE_JSON=$(node --no-warnings scripts/legacy-sync/run-legacy-sync.ts "${ARGS[@]}")
+          echo "$GATE_JSON"
+
+          SHOULD_RUN=$(node -e 'console.log(JSON.parse(process.argv[1]).shouldRun)' "$GATE_JSON")
+          RESOLVED_BASE=$(node -e 'console.log(JSON.parse(process.argv[1]).baseSha)' "$GATE_JSON")
+          RESOLVED_HEAD=$(node -e 'console.log(JSON.parse(process.argv[1]).headSha)' "$GATE_JSON")
+          SLICE_IDS=$(node -e 'console.log(JSON.stringify(JSON.parse(process.argv[1]).driftedSlices.map(s => s.id)))' "$GATE_JSON")
+          SKIP_REASON=$(node -e 'console.log(JSON.parse(process.argv[1]).skipReason || "Detected legacy-only changes on migrated slice(s)")' "$GATE_JSON")
+
+          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
+          echo "base_sha=${RESOLVED_BASE}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${RESOLVED_HEAD}" >> "$GITHUB_OUTPUT"
+          echo "slices_json=${SLICE_IDS}" >> "$GITHUB_OUTPUT"
+          echo "reason=${SKIP_REASON}" >> "$GITHUB_OUTPUT"
+
+      - name: Write drift gate summary
+        env:
+          SHOULD_RUN: ${{ steps.gate.outputs.should_run }}
+          REASON: ${{ steps.gate.outputs.reason }}
+          SLICES: ${{ steps.gate.outputs.slices_json }}
+          BASE_SHA: ${{ steps.gate.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.gate.outputs.head_sha }}
+        run: |
+          {
+            echo "### Legacy-to-Rust Parity Drift Gate"
+            echo "- **Should forward-port:** \`$SHOULD_RUN\`"
+            echo "- **Reason:** $REASON"
+            echo "- **Drifted slice(s):** \`$SLICES\`"
+            echo "- **Range:** \`$BASE_SHA\` → \`$HEAD_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Per-slice @cursor/sdk Cloud Agent forward-port.
+  # Opens a human-reviewed PR (skipReviewerRequest: true) inside the pre-warmed
+  # .cursor/environment.json VM where Rust & cargo test are pre-installed.
+  # ---------------------------------------------------------------------------
+  forward-port:
+    name: Forward-Port Slice ${{ matrix.slice_id }}
+    needs: detect-drift
+    if: needs.detect-drift.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        slice_id: ${{ fromJson(needs.detect-drift.outputs.slices_json) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect-drift.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install @cursor/sdk
+        run: npm install --no-save @cursor/sdk@^1.4.2
+
+      - name: Run Cursor Legacy-to-Rust Forward-Port Agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          SYNC_RUNTIME: ${{ inputs.runtime || 'cloud' }}
+          SYNC_BASE: ${{ needs.detect-drift.outputs.base_sha }}
+          SYNC_HEAD: ${{ needs.detect-drift.outputs.head_sha }}
+          SYNC_NO_PR: ${{ inputs.no_pr || 'false' }}
+          SYNC_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          SYNC_FORCE: ${{ inputs.force || 'false' }}
+          SYNC_MODEL: ${{ inputs.model || '' }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --runtime "$SYNC_RUNTIME"
+            --repo "$GITHUB_REPOSITORY"
+            --base-sha "$SYNC_BASE"
+            --head-sha "$SYNC_HEAD"
+            --slice "${{ matrix.slice_id }}"
+            --out "sync-output/slice-${{ matrix.slice_id }}.json"
+          )
+          if [ "$SYNC_NO_PR" = "true" ]; then ARGS+=(--no-pr); fi
+          if [ "$SYNC_DRY_RUN" = "true" ]; then ARGS+=(--dry-run); fi
+          if [ "$SYNC_FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$SYNC_MODEL" ]; then ARGS+=(--model "$SYNC_MODEL"); fi
+          node --no-warnings scripts/legacy-sync/run-legacy-sync.ts "${ARGS[@]}"
+
+      - name: Upload legacy-sync telemetry
+        if: ${{ !cancelled() && hashFiles(format('sync-output/slice-{0}.json', matrix.slice_id)) != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-sync-${{ github.run_id }}-slice-${{ matrix.slice_id }}
+          path: sync-output/slice-${{ matrix.slice_id }}.json
+          retention-days: 30

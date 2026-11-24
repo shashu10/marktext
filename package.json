@@ -44,6 +44,10 @@
     "migration:measure": "node --no-warnings scripts/migration-measure.ts",
     "migration:qa-monitor": "node --no-warnings scripts/qa-monitor/run-qa-monitor.ts",
     "migration:qa-test": "node --no-warnings --test scripts/qa-monitor/qa-monitor.test.ts",
+    "migration:triage": "node --no-warnings scripts/issue-triage/run-triage.ts",
+    "migration:triage-test": "node --no-warnings --test scripts/issue-triage/triage.test.ts",
+    "migration:legacy-sync": "node --no-warnings scripts/legacy-sync/run-legacy-sync.ts",
+    "migration:legacy-sync-test": "node --no-warnings --test scripts/legacy-sync/legacy-sync.test.ts",
     "prepare": "husky"
   },
   "lint-staged": {

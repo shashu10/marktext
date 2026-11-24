@@ -1,0 +1,82 @@
+{
+  "demoMode": true,
+  "demoAssignee": "shashu10",
+  "demoModeNote": "Synthetic enterprise team routing via docs/migration/OWNERS.json; assigned to @shashu10 in single-maintainer demo mode.",
+  "surfaces": {
+    "preferences": {
+      "team": "team:prefs-migration",
+      "area": "Preferences UI & Host Bridge",
+      "escalationChannel": "#migration-preferences",
+      "demoAssignee": "shashu10"
+    },
+    "editor-ui": {
+      "team": "team:editor-chrome",
+      "area": "Main Editor Chrome, Sidebars & Dialogs",
+      "escalationChannel": "#migration-editor-ui",
+      "demoAssignee": "shashu10"
+    },
+    "main-services": {
+      "team": "team:electron-platform",
+      "area": "Electron Main Process, Flags & IPC",
+      "escalationChannel": "#migration-platform",
+      "demoAssignee": "shashu10"
+    },
+    "editor-core": {
+      "team": "team:muya-core",
+      "area": "Muya WYSIWYG Parser & Rendering Core",
+      "escalationChannel": "#migration-muya-core",
+      "demoAssignee": "shashu10"
+    }
+  },
+  "slices": {
+    "W2.A": {
+      "team": "team:native-runtime",
+      "area": "Native GPUI Window & NDJSON IPC Runtime",
+      "escalationChannel": "#migration-native-runtime",
+      "demoAssignee": "shashu10"
+    }
+  },
+  "sharedPaths": [
+    {
+      "prefix": "rust/crates/mt-pref-app",
+      "team": "team:native-runtime",
+      "area": "Native GPUI Window & NDJSON IPC Runtime",
+      "escalationChannel": "#migration-native-runtime",
+      "demoAssignee": "shashu10"
+    },
+    {
+      "prefix": "rust/crates/marktext-wasm-host",
+      "team": "team:prefs-migration",
+      "area": "GPUI WASM Host & Theme Bridge",
+      "escalationChannel": "#migration-preferences",
+      "demoAssignee": "shashu10"
+    },
+    {
+      "prefix": "rust/crates/marktext-ui-kit",
+      "team": "team:design-systems",
+      "area": "Shared GPUI UI Kit & Theming",
+      "escalationChannel": "#migration-ui-kit",
+      "demoAssignee": "shashu10"
+    },
+    {
+      "prefix": "packages/desktop/src/shared/flags",
+      "team": "team:electron-platform",
+      "area": "Multi-Environment Feature Flag Router",
+      "escalationChannel": "#migration-platform",
+      "demoAssignee": "shashu10"
+    },
+    {
+      "prefix": "packages/desktop/src/renderer/src/components/gpuiHost",
+      "team": "team:prefs-migration",
+      "area": "Electron GpuiPaneHost Iframe Bridge",
+      "escalationChannel": "#migration-preferences",
+      "demoAssignee": "shashu10"
+    }
+  ],
+  "fallback": {
+    "team": "team:migration-platform",
+    "area": "Migration Platform Triage",
+    "escalationChannel": "#migration-triage",
+    "demoAssignee": "shashu10"
+  }
+}
