@@ -17,31 +17,39 @@ fn main() {
     gpui_platform::application()
         .with_quit_mode(QuitMode::LastWindowClosed)
         .run(move |cx| {
-            load_fonts(cx);
-            marktext_ui_kit::init(cx);
-            cx.bind_keys(default_bindings().as_keybindings(Some(DEFAULT_INPUT_CONTEXT)));
+            // Defer initialization onto the next foreground turn so `gpui_ce_macos`'s
+            // `did_finish_launching` releases its `platform.0` mutex before
+            // `marktext_ui_kit::init` / `open_window` re-enter `MacPlatform`.
+            cx.spawn(async move |cx| {
+                cx.update(|cx| {
+                    load_fonts(cx);
+                    marktext_ui_kit::init(cx);
+                    cx.bind_keys(default_bindings().as_keybindings(Some(DEFAULT_INPUT_CONTEXT)));
 
-            let root = cx.new(|cx| PrefAppRoot::new(initial.clone(), cx));
-            let bounds = Bounds::centered(None, size(px(950.), px(650.)), cx);
-            let window = cx
-                .open_window(
-                    WindowOptions::default()
-                        .window_bounds(WindowBounds::Windowed(bounds))
-                        .titlebar(Some(TitlebarOptions {
-                            title: Some("Preferences".into()),
-                            ..Default::default()
-                        })),
-                    {
-                        let root = root.clone();
-                        move |_window, _cx| root.clone()
-                    },
-                )
-                .expect("open preferences window");
-            install_stdio_bridge(root, window, cx);
-            cx.activate(true);
-            write_guest(&GuestToHost::Ready {
-                pane: Some(initial),
-            });
+                    let root = cx.new(|cx| PrefAppRoot::new(initial.clone(), cx));
+                    let bounds = Bounds::centered(None, size(px(950.), px(650.)), cx);
+                    let window = cx
+                        .open_window(
+                            WindowOptions::default()
+                                .window_bounds(WindowBounds::Windowed(bounds))
+                                .titlebar(Some(TitlebarOptions {
+                                    title: Some("Preferences".into()),
+                                    ..Default::default()
+                                })),
+                            {
+                                let root = root.clone();
+                                move |_window, _cx| root.clone()
+                            },
+                        )
+                        .expect("open preferences window");
+                    install_stdio_bridge(root, window, cx);
+                    cx.activate(true);
+                    write_guest(&GuestToHost::Ready {
+                        pane: Some(initial),
+                    });
+                });
+            })
+            .detach();
         });
 }
 
