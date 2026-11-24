@@ -78,6 +78,9 @@ pub enum HostToGuest {
     /// Active preferences category for the sidebar shell (`prefs.sidebar`).
     #[serde(rename = "ACTIVE_CATEGORY")]
     ActiveCategory { category: String },
+    /// Raise / focus the native preferences window (Stage 2 only).
+    #[serde(rename = "ACTIVATE")]
+    Activate,
 }
 
 /// Messages the GPUI guest posts back to the Vue host.
@@ -154,5 +157,11 @@ mod tests {
         assert_eq!(raw["readOnly"], json!(true));
         let parsed: GuestToHost = serde_json::from_value(raw).unwrap();
         assert_eq!(parsed, guest);
+
+        let activate = HostToGuest::Activate;
+        let raw = serde_json::to_value(&activate).unwrap();
+        assert_eq!(raw, json!({ "type": "ACTIVATE" }));
+        let parsed: HostToGuest = serde_json::from_value(raw).unwrap();
+        assert_eq!(parsed, activate);
     }
 }

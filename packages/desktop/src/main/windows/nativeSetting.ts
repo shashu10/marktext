@@ -2,8 +2,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
-import { dialog, shell } from 'electron'
+import { BrowserWindow, dialog, session, shell } from 'electron'
 import log from 'electron-log'
+import commandExists from 'command-exists'
 import { isOsx } from '../config'
 import type Accessor from '../app/accessor'
 import BaseWindow, { WindowLifecycle, WindowType } from './base'
@@ -38,6 +39,36 @@ export const resolvePrefAppBinary = (
 const isRecord = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+/**
+ * Effective accelerator for a command. A stored empty string is an intentional
+ * unbind — do not fall through to the default.
+ */
+export const resolveDisplayedAccelerator = (
+  userAccelerator: string | undefined,
+  defaultAccelerator: string
+): string => (userAccelerator != null ? userAccelerator : defaultAccelerator)
+
+/** Apply one user binding edit. Empty string stays in the map (unbind). */
+export const applyUserKeybindingEdit = (
+  current: Map<string, string>,
+  commandId: string,
+  accelerator: string,
+  defaults: Map<string, string>
+): Map<string, string> => {
+  const next = new Map(current)
+  if (accelerator === defaults.get(commandId)) {
+    next.delete(commandId)
+  } else {
+    next.set(commandId, accelerator)
+  }
+  return next
+}
+
+const spellSession = (): Electron.Session => {
+  const editor = BrowserWindow.getAllWindows().find(win => !win.isDestroyed())
+  return editor?.webContents.session ?? session.defaultSession
+}
+
 let nextNativeId = 0x4e415400 // 'NAT\0'
 
 /**
@@ -48,10 +79,17 @@ class NativeSettingWindow extends BaseWindow {
   private child: ChildProcessWithoutNullStreams | null = null
   private category: string = 'general'
   private closing = false
+  /** First READY already pushed the snapshot; ignore handshake echoes. */
+  private bootstrapped = false
 
   constructor(accessor: Accessor) {
     super(accessor)
     this.type = WindowType.SETTINGS
+  }
+
+  /** PID of the native sidecar, when running. */
+  get childPid(): number | null {
+    return this.child?.pid ?? null
   }
 
   createWindow(category: string | null = null): null {
@@ -66,10 +104,10 @@ class NativeSettingWindow extends BaseWindow {
     this.id = nextNativeId++
     this.browserWindow = null
     this.lifecycle = WindowLifecycle.LOADING
+    this.bootstrapped = false
 
     const child = spawn(binary, [this.category], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      // Keep the child in Electron's process group so a hard exit reaps it.
       detached: false,
       env: {
         ...process.env,
@@ -112,11 +150,12 @@ class NativeSettingWindow extends BaseWindow {
   }
 
   override bringToFront(): void {
+    this.send({ type: 'ACTIVATE' })
     this.emit('window-focus')
   }
 
   override reload(): void {
-    // Native prefs reload by re-pushing the snapshot; no BrowserWindow to reload.
+    this.bootstrapped = false
     void this.pushBootstrap()
   }
 
@@ -148,13 +187,16 @@ class NativeSettingWindow extends BaseWindow {
     if (typeof message.type !== 'string') return
 
     if (message.type === 'READY') {
-      await this.pushBootstrap()
+      // Guest posts READY once at startup. Do not echo HOST_HELLO — that would
+      // make PaneRouter reply READY again and restart bootstrap forever.
+      if (!this.bootstrapped) await this.pushBootstrap()
       return
     }
     if (message.type === 'SET_PREFERENCE' && typeof message.key === 'string') {
       this._accessor.preferences.setItems({ [message.key]: message.value })
       if (message.key === 'spellcheckerLanguage' && typeof message.value === 'string') {
-        // Editor windows pick this up via the preference broadcast.
+        const win = BrowserWindow.getAllWindows().find(entry => !entry.isDestroyed())
+        if (win) win.webContents.session.setSpellCheckerLanguages([message.value])
       }
       return
     }
@@ -209,32 +251,54 @@ class NativeSettingWindow extends BaseWindow {
       await this.resetAllKeybindings(message.id)
       return
     }
-    if (message.type === 'SPELLCHECKER_REMOVE_WORD' && typeof message.id === 'number') {
-      // Custom dictionary IPC lives on renderer spellchecker today; acknowledge failure.
-      this.send({ type: 'SPELLCHECKER_REMOVE_RESULT', id: message.id, ok: false })
+    if (
+      message.type === 'SPELLCHECKER_REMOVE_WORD' &&
+      typeof message.id === 'number' &&
+      typeof message.word === 'string'
+    ) {
+      const ok = spellSession().removeWordFromSpellCheckerDictionary(message.word)
+      this.send({ type: 'SPELLCHECKER_REMOVE_RESULT', id: message.id, ok })
       return
     }
     if (message.type === 'KEYBINDING_DEBUG_DUMP') {
-      // Handled by the existing keyboard debug IPC when a renderer asks; no-op here.
       return
     }
   }
 
   private async pushBootstrap(): Promise<void> {
+    this.bootstrapped = true
     const preferences = {
       ...this._accessor.preferences.getAll(),
       ...(await this._accessor.dataCenter.getAll())
     }
-    this.send({ type: 'HOST_HELLO' })
+    // Intentionally omit HOST_HELLO: the guest already said READY, and
+    // HostHello → Ready would re-enter this method.
     this.send({ type: 'SET_PANE', pane: this.category })
     this.send({ type: 'ACTIVE_CATEGORY', category: this.category })
     this.send({ type: 'PREFERENCES', snapshot: preferences })
     this.sendKeybindings()
+    await this.sendSpellcheckerInfo()
+  }
+
+  private async sendSpellcheckerInfo(): Promise<void> {
+    const ses = spellSession()
+    let dictionaries: string[] = []
+    let words: string[] = []
+    if (!isOsx) {
+      const available = ses.availableSpellCheckerLanguages
+      dictionaries = available.length > 0 ? available : ['en-US']
+      try {
+        words = await ses.listWordsInSpellCheckerDictionary()
+      } catch (error) {
+        log.warn('Failed to list spellchecker dictionary words', error)
+        words = []
+      }
+    }
     this.send({
       type: 'SPELLCHECKER_INFO',
       isOsx: isOsx,
-      dictionaries: isOsx ? [] : ['en-US'],
-      words: []
+      dictionaries,
+      words
     })
   }
 
@@ -250,8 +314,7 @@ class NativeSettingWindow extends BaseWindow {
     }> = []
     for (const [id, defaultAccelerator] of defaults) {
       if (!isOsx && id.startsWith('mt.')) continue
-      const userAccelerator = user.get(id)
-      const accelerator = userAccelerator != null ? userAccelerator : defaultAccelerator
+      const accelerator = resolveDisplayedAccelerator(user.get(id), defaultAccelerator)
       commands.push({
         id,
         description: id,
@@ -271,13 +334,12 @@ class NativeSettingWindow extends BaseWindow {
 
   private async saveKeybinding(id: number, commandId: string, accelerator: string): Promise<void> {
     const { keybindings, menu, windowManager } = this._accessor
-    const next = new Map(keybindings.getUserKeybindings())
-    const defaults = keybindings.getDefaultKeybindings()
-    if (accelerator === '' || accelerator === defaults.get(commandId)) {
-      next.delete(commandId)
-    } else {
-      next.set(commandId, accelerator)
-    }
+    const next = applyUserKeybindingEdit(
+      keybindings.getUserKeybindings(),
+      commandId,
+      accelerator,
+      keybindings.getDefaultKeybindings()
+    )
     const editorWindows = windowManager
       .getWindowsByType(WindowType.EDITOR)
       .map(({ win }) => win.browserWindow)
@@ -355,8 +417,30 @@ class NativeSettingWindow extends BaseWindow {
         status = 'ok'
         result = { path: body.path, executable: isExecutableFile(body.path) }
       } else if (action === 'probe-picgo') {
+        const detectedAt = new Date().toISOString()
+        const debug: string[] = [`Detection time: ${detectedAt}`, `Platform: ${process.platform}`]
+        let nodeExists = false
+        let npmExists = false
+        let exists = false
+        try {
+          nodeExists = commandExists.sync('node')
+          npmExists = commandExists.sync('npm')
+          exists = commandExists.sync('picgo')
+        } catch (error) {
+          debug.push(`Detection error: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        debug.push(
+          `Node.js detected: ${nodeExists}`,
+          `npm detected: ${npmExists}`,
+          `PicGo-Core detected: ${exists}`
+        )
         status = 'ok'
-        result = { exists: false, detectedAt: new Date().toISOString(), debug: 'native-host' }
+        result = {
+          exists,
+          detectedAt,
+          debug: debug.join('\n'),
+          ...(exists ? { successAt: detectedAt } : {})
+        }
       }
     } catch (error) {
       status = 'failed'

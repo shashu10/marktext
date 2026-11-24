@@ -41,7 +41,8 @@ impl PaneRouter {
             | HostToGuest::SpellcheckerRemoveResult { .. }
             | HostToGuest::Keybindings { .. }
             | HostToGuest::KeybindingResult { .. }
-            | HostToGuest::ActiveCategory { .. } => None,
+            | HostToGuest::ActiveCategory { .. }
+            | HostToGuest::Activate => None,
         }
     }
 }
@@ -79,5 +80,6 @@ mod tests {
                 })
                 .is_none()
         );
+        assert!(router.handle(&HostToGuest::Activate).is_none());
     }
 }

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { resolvePrefAppBinary } from '../../../src/main/windows/nativeSetting'
+import {
+  applyUserKeybindingEdit,
+  resolveDisplayedAccelerator,
+  resolvePrefAppBinary
+} from '../../../src/main/windows/nativeSetting'
 import { resolveFlag } from '@shared/flags'
 
 describe('native preferences launcher', () => {
@@ -27,5 +31,17 @@ describe('native preferences launcher', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('keeps an empty user accelerator as an unbind', () => {
+    expect(resolveDisplayedAccelerator('', 'Ctrl+S')).toBe('')
+    expect(resolveDisplayedAccelerator(undefined, 'Ctrl+S')).toBe('Ctrl+S')
+
+    const defaults = new Map([['file.save', 'Ctrl+S']])
+    const unbound = applyUserKeybindingEdit(new Map(), 'file.save', '', defaults)
+    expect(unbound.get('file.save')).toBe('')
+
+    const restored = applyUserKeybindingEdit(unbound, 'file.save', 'Ctrl+S', defaults)
+    expect(restored.has('file.save')).toBe(false)
   })
 })

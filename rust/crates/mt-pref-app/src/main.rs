@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use gpui::{
-    App, AppContext as _, Bounds, Entity, QuitMode, TitlebarOptions, WindowBounds, WindowOptions,
-    px, size,
+    App, AppContext as _, Bounds, Entity, QuitMode, TitlebarOptions, WindowBounds, WindowHandle,
+    WindowOptions, px, size,
 };
 use gpui_elements::editable_text::actions::{DEFAULT_INPUT_CONTEXT, default_bindings};
 use marktext_core::{GuestToHost, HostToGuest};
@@ -22,19 +22,22 @@ fn main() {
             cx.bind_keys(default_bindings().as_keybindings(Some(DEFAULT_INPUT_CONTEXT)));
 
             let root = cx.new(|cx| PrefAppRoot::new(initial.clone(), cx));
-            install_stdio_bridge(root.clone(), cx);
-
             let bounds = Bounds::centered(None, size(px(950.), px(650.)), cx);
-            cx.open_window(
-                WindowOptions::default()
-                    .window_bounds(WindowBounds::Windowed(bounds))
-                    .titlebar(Some(TitlebarOptions {
-                        title: Some("Preferences".into()),
-                        ..Default::default()
-                    })),
-                move |_window, _cx| root.clone(),
-            )
-            .expect("open preferences window");
+            let window = cx
+                .open_window(
+                    WindowOptions::default()
+                        .window_bounds(WindowBounds::Windowed(bounds))
+                        .titlebar(Some(TitlebarOptions {
+                            title: Some("Preferences".into()),
+                            ..Default::default()
+                        })),
+                    {
+                        let root = root.clone();
+                        move |_window, _cx| root.clone()
+                    },
+                )
+                .expect("open preferences window");
+            install_stdio_bridge(root, window, cx);
             cx.activate(true);
             write_guest(&GuestToHost::Ready {
                 pane: Some(initial),
@@ -53,13 +56,24 @@ fn load_fonts(cx: &mut App) {
         .expect("bundled Liberation Sans fonts are valid");
 }
 
-fn install_stdio_bridge(root: Entity<PrefAppRoot>, cx: &mut App) {
+fn install_stdio_bridge(
+    root: Entity<PrefAppRoot>,
+    window: WindowHandle<PrefAppRoot>,
+    cx: &mut App,
+) {
     let (tx, rx) = async_channel::unbounded::<HostToGuest>();
     spawn_stdin_reader(tx);
 
     cx.spawn(async move |cx| {
         while let Ok(message) = rx.recv().await {
             let reply = cx.update(|app| {
+                if matches!(message, HostToGuest::Activate) {
+                    app.activate(true);
+                    let _ = window.update(app, |_view, window, _cx| {
+                        window.activate();
+                    });
+                    return None;
+                }
                 root.update(app, |view, cx| {
                     let reply = view.apply(&message, cx);
                     cx.notify();

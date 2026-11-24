@@ -166,7 +166,34 @@ const readProcessRssMb = (pid: number): number | null => {
   }
 }
 
-export const findMtPrefAppPid = (): number | null => {
+const readProcPpid = (pid: number): number | null => {
+  try {
+    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8')
+    const match = /^PPid:\s+(\d+)$/m.exec(status)
+    return match ? Number(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
+/** True when `pid` is `ancestorPid` or a descendant of it. */
+export const isDescendantOf = (pid: number, ancestorPid: number): boolean => {
+  let current: number | null = pid
+  const seen = new Set<number>()
+  while (current != null && current > 0 && !seen.has(current)) {
+    if (current === ancestorPid) return true
+    seen.add(current)
+    current = readProcPpid(current)
+  }
+  return false
+}
+
+/**
+ * Locate a live `mt-pref-app`. When `parentPid` is set, only accept processes
+ * under that Electron tree so a parallel harness cannot steal another run's
+ * sidecar (or leave orphans after the wrong kill).
+ */
+export const findMtPrefAppPid = (parentPid?: number | null): number | null => {
   try {
     const procs = fs.readdirSync('/proc').filter(name => /^\d+$/.test(name))
     let best: { pid: number; rss: number } | null = null
@@ -174,11 +201,13 @@ export const findMtPrefAppPid = (): number | null => {
       try {
         const cmdline = fs.readFileSync(`/proc/${id}/cmdline`, 'utf8')
         if (!cmdline.includes('mt-pref-app')) continue
-        const status = fs.readFileSync(`/proc/${id}/status`, 'utf8')
+        const pid = Number(id)
+        if (parentPid != null && !isDescendantOf(pid, parentPid)) continue
+        const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8')
         if (/^State:\s+Z/m.test(status)) continue
         const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status)
         const rss = match ? Number(match[1]) : 0
-        if (!best || rss > best.rss) best = { pid: Number(id), rss }
+        if (!best || rss > best.rss) best = { pid, rss }
       } catch {
         // process vanished
       }
@@ -187,6 +216,28 @@ export const findMtPrefAppPid = (): number | null => {
   } catch {
     return null
   }
+}
+
+/** utime+stime jiffies from `/proc/<pid>/stat` (fields 14–15). */
+export const readProcessCpuJiffies = (pid: number): number | null => {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const close = stat.lastIndexOf(')')
+    if (close < 0) return null
+    const rest = stat.slice(close + 2).split(' ')
+    const utime = Number(rest[11])
+    const stime = Number(rest[12])
+    if (!Number.isFinite(utime) || !Number.isFinite(stime)) return null
+    return utime + stime
+  } catch {
+    return null
+  }
+}
+
+const cpuJiffiesToPercent = (before: number, after: number, elapsedMs: number): number => {
+  const hz = 100
+  const seconds = Math.max(elapsedMs / 1000, 0.001)
+  return Number((((after - before) / hz / seconds) * 100).toFixed(3))
 }
 
 const captureRootScreenshot = (screenshot: string): void => {
@@ -202,9 +253,9 @@ const captureRootScreenshot = (screenshot: string): void => {
   }
 }
 
-const killMtPrefAppChildren = (): void => {
+const killMtPrefAppChildren = (parentPid?: number | null): void => {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const pid = findMtPrefAppPid()
+    const pid = findMtPrefAppPid(parentPid)
     if (pid == null) return
     try {
       process.kill(pid, attempt < 2 ? 'SIGTERM' : 'SIGKILL')
@@ -305,6 +356,7 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
     env,
     timeout: 30000
   })
+  const electronPid = app.process()?.pid ?? null
   try {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -313,6 +365,8 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
     let paneSwitchLatencyMs: number | null = null
     let shot = page
     let nativeChildRssMb: number | null = null
+    let sidecarCpuBefore: number | null = null
+    let sidecarSampleStarted = 0
     if (category) {
       const paneStarted = Date.now()
       await app.evaluate(({ ipcMain }, requested: string) => {
@@ -322,7 +376,7 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
         const deadline = Date.now() + 20000
         let pid: number | null = null
         while (Date.now() < deadline) {
-          pid = findMtPrefAppPid()
+          pid = findMtPrefAppPid(electronPid)
           if (pid != null) break
           await page.waitForTimeout(200)
         }
@@ -332,6 +386,8 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
         paneSwitchLatencyMs = Date.now() - paneStarted
         if (options.screenshot) captureRootScreenshot(options.screenshot)
         nativeChildRssMb = readProcessRssMb(pid)
+        sidecarCpuBefore = readProcessCpuJiffies(pid)
+        sidecarSampleStarted = Date.now()
       } else {
         const deadline = Date.now() + 15000
         let settings: typeof page | null = null
@@ -394,10 +450,24 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
     await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics())
     await page.waitForTimeout(nativeMode ? 2000 : 5000)
     const metrics = await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics()) as ProcessMetric[]
-    const cpu = metrics.reduce((sum, metric) => sum + metric.cpu.percentCPUUsage, 0)
+    let cpu = metrics.reduce((sum, metric) => sum + metric.cpu.percentCPUUsage, 0)
     if (nativeMode) {
-      const pid = findMtPrefAppPid()
-      if (pid != null) nativeChildRssMb = readProcessRssMb(pid)
+      const pid = findMtPrefAppPid(electronPid)
+      if (pid != null) {
+        nativeChildRssMb = readProcessRssMb(pid)
+        const afterJiffies = readProcessCpuJiffies(pid)
+        if (
+          sidecarCpuBefore != null &&
+          afterJiffies != null &&
+          sidecarSampleStarted > 0
+        ) {
+          cpu += cpuJiffiesToPercent(
+            sidecarCpuBefore,
+            afterJiffies,
+            Date.now() - sidecarSampleStarted
+          )
+        }
+      }
     }
     const report: MeasureReport = {
       slice: options.slice,
@@ -412,11 +482,11 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
       artifactSizeMb: artifactSizes(),
       screenshot: options.screenshot
     }
-    // Reap the sidecar before tearing down Electron so close() cannot hang.
-    killMtPrefAppChildren()
+    // Reap only this Electron tree's sidecar before close() can hang on it.
+    killMtPrefAppChildren(electronPid)
     return report
   } finally {
-    killMtPrefAppChildren()
+    killMtPrefAppChildren(electronPid)
     try {
       const proc = app.process()
       if (proc?.pid) process.kill(proc.pid, 'SIGKILL')
@@ -427,7 +497,7 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
       app.close().catch(() => {}),
       new Promise<void>(resolve => setTimeout(resolve, 3000))
     ])
-    killMtPrefAppChildren()
+    killMtPrefAppChildren(electronPid)
     fs.rmSync(userDataDir, { recursive: true, force: true })
   }
 }
