@@ -144,6 +144,8 @@ Audited A1 and compared screenshots.
 
   const fallback = `Report:\n\`\`\`json\n{"summary":"Clean","slicesAudited":["A1"],"findings":[]}\n\`\`\``
   assert.equal(parseAuditReportFromText(fallback).findings.length, 0)
+  assert.throws(() => parseAuditReportFromText('{"slicesAudited":["A1"]}'), /findings array/)
+  assert.throws(() => validateAuditReport({ slicesAudited: ['A1'], findings: null }), /findings array/)
 
   assert.throws(() => parseAuditReportFromText('No JSON block emitted here.'))
 })

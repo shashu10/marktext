@@ -183,9 +183,11 @@ export function validateAuditReport(raw: unknown): QaAuditReport {
   const obj = raw as Record<string, unknown>
   const summary = asString(obj.summary, 'QA regression audit completed.')
   const slicesAudited = asStringArray(obj.slicesAudited)
-  const rawFindings = Array.isArray(obj.findings) ? obj.findings : []
+  if (!Array.isArray(obj.findings)) {
+    throw new Error('QA audit report must include a findings array, even for a clean audit')
+  }
 
-  const findings: QaFinding[] = rawFindings.map((entry, idx) => {
+  const findings: QaFinding[] = obj.findings.map((entry, idx) => {
     if (!entry || typeof entry !== 'object') {
       throw new Error(`Finding at index ${idx} must be an object`)
     }

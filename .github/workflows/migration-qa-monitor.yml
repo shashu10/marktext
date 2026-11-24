@@ -113,12 +113,17 @@ jobs:
           fi
 
       - name: Write gate summary
+        env:
+          SHOULD_RUN: ${{ steps.gate.outputs.should_run }}
+          GATE_REASON: ${{ steps.gate.outputs.reason }}
+          BASE_SHA: ${{ steps.gate.outputs.base_sha || 'baseline' }}
+          HEAD_SHA: ${{ steps.gate.outputs.head_sha }}
         run: |
           {
             echo "### QA Change Gate"
-            echo "- **Should run QA agent:** \`${{ steps.gate.outputs.should_run }}\`"
-            echo "- **Reason:** ${{ steps.gate.outputs.reason }}"
-            echo "- **Range:** \`${{ steps.gate.outputs.base_sha || 'baseline' }}\` → \`${{ steps.gate.outputs.head_sha }}\`"
+            echo "- **Should run QA agent:** \`$SHOULD_RUN\`"
+            echo "- **Reason:** $GATE_REASON"
+            echo "- **Range:** \`$BASE_SHA\` → \`$HEAD_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   qa-audit:
@@ -149,7 +154,7 @@ jobs:
         run: |
           # Cloud runtime executes MarkText/Rust/Playwright inside the pre-warmed
           # Cursor Cloud Agent VM (.cursor/environment.json), so this GHA runner
-          # only needs @cursor/sdk to orchestrate the run and file GitHub issues.
+          # only needs @cursor/sdk to run the audit and capture its report.
           npm install --no-save @cursor/sdk@^1.4.2
 
       - name: Run Migration QA Monitor
@@ -157,7 +162,6 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
           AUDIT_RUNTIME: ${{ inputs.runtime || 'cloud' }}
           AUDIT_HEAD: ${{ needs.check-changes.outputs.head_sha }}
           AUDIT_BASE: ${{ needs.check-changes.outputs.base_sha }}
