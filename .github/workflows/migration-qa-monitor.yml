@@ -131,7 +131,7 @@ jobs:
     needs: check-changes
     if: needs.check-changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     permissions:
       contents: read
       issues: read

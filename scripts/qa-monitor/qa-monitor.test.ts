@@ -260,6 +260,75 @@ test('issue-filer formats title/body/labels and deduplicates by fingerprint', ()
   assert.equal(records[1]?.status, 'dry-run')
 })
 
+test('issue-filer deduplicates reused unprefixed and cross-slice fingerprints without false positives', () => {
+  const report: QaAuditReport = validateAuditReport({
+    summary: 'Cross-slice duplicate check.',
+    slicesAudited: ['A1', 'A2'],
+    findings: [
+      {
+        title: 'GPUI preference panes stay light in dark theme',
+        severity: 'P2',
+        slice: 'A1',
+        category: 'visual-polish',
+        fingerprint: 'prefs:gpui-panes-stuck-light-theme'
+      },
+      {
+        title: 'Scroll locked on Appearance (reusing A1 fingerprint)',
+        severity: 'P1',
+        slice: 'A2',
+        category: 'interaction-or-scroll',
+        fingerprint: 'a1:scroll-locked'
+      },
+      {
+        title: 'Distinct scroll issue on Appearance',
+        severity: 'P1',
+        slice: 'A2',
+        category: 'interaction-or-scroll',
+        fingerprint: 'scroll-locked'
+      }
+    ]
+  })
+
+  const existing: ExistingRegressionIssue[] = [
+    {
+      number: 18,
+      title: '[P2][A1-A7] Migrated GPUI preference panes stay in light theme when app uses dark theme',
+      url: 'https://github.com/shashu10/marktext/issues/18',
+      fingerprint: 'prefs:gpui-panes-stuck-light-theme'
+    },
+    {
+      number: 42,
+      title: '[P1][A1] Cannot scroll General pane',
+      url: 'https://github.com/shashu10/marktext/issues/42',
+      fingerprint: 'a1:scroll-locked'
+    }
+  ]
+
+  const records = fileAuditFindings({
+    repoRoot: process.cwd(),
+    report,
+    existingIssues: existing,
+    meta: {
+      repoSlug: 'shashu10/marktext',
+      baseSha: '1111111111111111',
+      headSha: '2222222222222222',
+      agentId: 'bc-test-123',
+      runId: 'run-456',
+      runtime: 'cloud',
+      dryRun: true
+    }
+  })
+
+  // Sorted P1 -> P2: A2 reusing a1:scroll-locked (#42), A2 distinct scroll-locked (dry-run), A1 reusing #18
+  assert.equal(records.length, 3)
+  assert.equal(records[0]?.status, 'skipped-duplicate')
+  assert.equal(records[0]?.duplicateOf, 42)
+  assert.equal(records[1]?.status, 'dry-run')
+  assert.equal(records[1]?.finding.fingerprint, 'a2:scroll-locked')
+  assert.equal(records[2]?.status, 'skipped-duplicate')
+  assert.equal(records[2]?.duplicateOf, 18)
+})
+
 test('prompt builder enforces non-fixing QA guardrails and includes rubric', () => {
   const prompt = buildQaAuditPrompt({
     repoSlug: 'shashu10/marktext',

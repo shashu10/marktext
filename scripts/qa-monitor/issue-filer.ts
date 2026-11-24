@@ -193,6 +193,24 @@ export function ensureGitHubLabels(
   }
 }
 
+function findOpenDuplicate(
+  finding: QaFinding,
+  openByFingerprint: Map<string, ExistingRegressionIssue>
+): ExistingRegressionIssue | undefined {
+  const fullKey = finding.fingerprint.toLowerCase()
+  const direct = openByFingerprint.get(fullKey)
+  if (direct) return direct
+
+  const slicePrefix = finding.slice ? `${finding.slice.toLowerCase()}:` : ''
+  if (slicePrefix && fullKey.startsWith(slicePrefix)) {
+    const unprefixed = fullKey.slice(slicePrefix.length)
+    if (unprefixed) {
+      return openByFingerprint.get(unprefixed)
+    }
+  }
+  return undefined
+}
+
 export function fileAuditFindings(options: {
   repoRoot: string
   report: QaAuditReport
@@ -224,7 +242,7 @@ export function fileAuditFindings(options: {
 
   const results: FiledIssueRecord[] = []
   for (const finding of report.findings) {
-    const existing = openByFingerprint.get(finding.fingerprint.toLowerCase())
+    const existing = findOpenDuplicate(finding, openByFingerprint)
     if (existing) {
       results.push({
         finding,
