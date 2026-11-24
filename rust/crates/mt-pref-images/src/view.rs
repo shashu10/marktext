@@ -3,14 +3,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    App, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px,
-    rgb,
+    AnyElement, App, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    prelude::*, px, rgb,
 };
 use gpui_elements::editable_text::EditableTextState;
 use marktext_core::{HostBridge, MemoryHostBridge};
 use marktext_ui_kit::{
-    action_button, button_disabled, choice_button, pref_field, pref_page, pref_section,
-    pref_text_input, select_control, toggle,
+    action_button, button_disabled, choice_button, locked_select, pref_field, pref_page,
+    pref_section, pref_text_input, select_control, toggle,
 };
 use serde_json::{Value, json};
 
@@ -969,20 +969,16 @@ fn choice_row(
     choices: &[Choice],
     selected: &str,
     disabled: bool,
-) -> impl IntoElement {
-    let view = view.clone();
+) -> AnyElement {
     let options = choices.iter().map(|choice| (choice.value, choice.label));
-    let control = select_control(id, options, selected, move |chosen, _window, app| {
-        if disabled {
-            return;
-        }
-        write_pref_back(&view, key, Value::String(chosen.to_string()), app);
-    });
     if disabled {
-        div().opacity(0.5).child(control)
-    } else {
-        div().child(control)
+        return locked_select(id, options, selected).into_any_element();
     }
+    let view = view.clone();
+    select_control(id, options, selected, move |chosen, _window, app| {
+        write_pref_back(&view, key, Value::String(chosen.to_string()), app);
+    })
+    .into_any_element()
 }
 
 fn bool_row(
