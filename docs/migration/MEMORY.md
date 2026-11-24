@@ -46,6 +46,12 @@ The custom CSS box started empty and reported only the length of the saved style
 
 The canvas loads Liberation Sans only. A language name written in Chinese, Japanese, or Korean is invisible, which looks like a missing control rather than a font gap. Show an English label. The stored value stays the locale code, such as `zh-CN`.
 
+## `HOST_ACTION` payloads arrive as JS `Map` instead of plain objects (A8)
+
+Clicking a category in the Rust sidebar highlighted the sidebar row, but Vue never navigated to the new pane.
+
+`serde_wasm_bindgen::to_value` serializes `serde_json::Value::Object` as a JavaScript `Map`, so property checks like `typeof payload.category === 'string'` in `GpuiPaneHost.vue` silently fail. Always serialize guest-to-host messages with `serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true)` in `marktext-wasm-host`.
+
 ## Data-center keys never reach the preference bridge (A6)
 
 `imageFolderPath`, `currentUploader`, and `cliScript` arrive in the `PREFERENCES` snapshot from Pinia, but `MemoryHostBridge` only keeps keys from `schema.json`. The Images pane looked empty for the global folder even though Electron had a path.
