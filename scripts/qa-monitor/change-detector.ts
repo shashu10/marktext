@@ -31,7 +31,7 @@ export interface ChangeAuditContext {
   allActiveSlices: SliceMetadata[]
 }
 
-const RELEVANT_PATH_PREFIXES = [
+const RELEVANT_PATHS = [
   'rust/',
   'packages/desktop/src/',
   'packages/muya/src/',
@@ -42,8 +42,8 @@ const RELEVANT_PATH_PREFIXES = [
 
 export function isRelevantMigrationPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/')
-  return RELEVANT_PATH_PREFIXES.some(
-    (prefix) => normalized === prefix || normalized.startsWith(prefix)
+  return RELEVANT_PATHS.some(
+    (path) => path.endsWith('/') ? normalized.startsWith(path) : normalized === path
   )
 }
 
@@ -141,13 +141,14 @@ function runGit(repoRoot: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd: repoRoot,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe']
-  }).trim()
+  })
 }
 
 export function resolveGitSha(repoRoot: string, ref: string): string | null {
   try {
-    return runGit(repoRoot, ['rev-parse', '--verify', `${ref}^{commit}`])
+    return runGit(repoRoot, ['rev-parse', '--verify', `${ref}^{commit}`]).trim()
   } catch {
     return null
   }
@@ -256,7 +257,7 @@ function readCommitRange(
       '--no-merges',
       '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI',
       ...rangeArgs
-    ])
+    ]).trim()
   } catch {
     return []
   }
@@ -280,13 +281,8 @@ function readChangedFiles(
   baseSha: string | null,
   headSha: string
 ): string[] {
-  try {
-    const args = baseSha
-      ? ['diff', '--name-only', `${baseSha}..${headSha}`]
-      : ['diff-tree', '--no-commit-id', '--name-only', '-r', headSha]
-    const output = runGit(repoRoot, args)
-    return output ? output.split('\n').map((l) => l.trim()).filter(Boolean) : []
-  } catch {
-    return []
-  }
+  // A first audit covers every active slice, regardless of what changed in the tip commit.
+  if (!baseSha) return []
+  const output = runGit(repoRoot, ['diff', '--name-only', '--no-renames', '-z', baseSha, headSha, '--'])
+  return output.split('\0').filter(Boolean)
 }

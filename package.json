@@ -43,7 +43,7 @@
     "migration:progress": "node --no-warnings scripts/migration-progress.ts",
     "migration:measure": "node --no-warnings scripts/migration-measure.ts",
     "migration:qa-monitor": "node --no-warnings scripts/qa-monitor/run-qa-monitor.ts",
-    "migration:qa-test": "node --no-warnings --test scripts/qa-monitor/qa-monitor.test.ts",
+    "migration:qa-test": "node --no-warnings --test scripts/qa-monitor/*.test.ts",
     "prepare": "husky"
   },
   "lint-staged": {

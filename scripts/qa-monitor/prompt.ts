@@ -111,12 +111,12 @@ ${formatRubricMarkdown()}
 
 ## Required Final Output Format
 
-At the very end of your response, emit **one** fenced \`qa-findings-json\` block matching this exact schema (use \`"findings": []\` if zero regressions were found):
+At the very end of your response, emit **one** fenced \`qa-findings-json\` block matching this exact schema (use \`"findings": []\` if zero regressions were found). List every audited slice ID individually in \`slicesAudited\` (exact IDs from **Target slices to audit**, never collapsed ranges like \`"A1-A8"\`). If a finding matches an already-open issue above, reuse its exact fingerprint string so deduplication skips re-filing it:
 
 \`\`\`qa-findings-json
 {
   "summary": "One-paragraph QA executive summary covering what was tested, metrics delta, and overall verdict.",
-  "slicesAudited": ["A1"],
+  "slicesAudited": ${JSON.stringify(context.targetSlices.map((s) => s.id))},
   "findings": [
     {
       "title": "Short, crisp bug title (no [P0] prefix — added automatically)",

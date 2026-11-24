@@ -33,7 +33,7 @@ export interface IssueFilerMetadata {
   dryRun: boolean
 }
 
-const FINGERPRINT_RE = /<!--\s*qa-fingerprint:\s*([a-z0-9:_-]+)\s*-->/i
+const FINGERPRINT_RE = /<!--\s*qa-fingerprint:\s*([a-z0-9:._-]+)\s*-->/i
 
 export function extractFingerprintFromBody(body: string): string | null {
   const match = body.match(FINGERPRINT_RE)
@@ -122,45 +122,38 @@ function runGh(args: string[], repoRoot: string): string {
   return execFileSync('gh', args, {
     cwd: repoRoot,
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 32 * 1024 * 1024
   }).trim()
 }
 
 export function listOpenRegressionIssues(
   repoRoot: string,
-  repoSlug: string
+  repoSlug: string,
+  required = false
 ): ExistingRegressionIssue[] {
   try {
-    const raw = runGh(
-      [
-        'issue',
-        'list',
-        '--repo',
-        repoSlug,
-        '--state',
-        'open',
-        '--label',
-        'regression',
-        '--limit',
-        '200',
-        '--json',
-        'number,title,url,body'
-      ],
-      repoRoot
-    )
-    const parsed = JSON.parse(raw || '[]') as Array<{
+    const raw = runGh([
+      'api',
+      '--paginate',
+      '--slurp',
+      `repos/${repoSlug}/issues?state=open&labels=regression&per_page=100`
+    ], repoRoot)
+    const pages = JSON.parse(raw) as Array<Array<{
       number: number
       title: string
-      url: string
-      body?: string
-    }>
-    return parsed.map((item) => ({
+      html_url: string
+      body: string | null
+      pull_request?: object
+    }>>
+    return pages.flat().filter(item => !item.pull_request).map((item) => ({
       number: item.number,
       title: item.title,
-      url: item.url,
+      url: item.html_url,
       fingerprint: extractFingerprintFromBody(item.body ?? '')
     }))
   } catch (err) {
+    if (required) throw err
     console.warn(
       `[qa-monitor] Warning: could not fetch open regression issues (${err instanceof Error ? err.message : String(err)})`
     )
@@ -200,6 +193,24 @@ export function ensureGitHubLabels(
   }
 }
 
+function findOpenDuplicate(
+  finding: QaFinding,
+  openByFingerprint: Map<string, ExistingRegressionIssue>
+): ExistingRegressionIssue | undefined {
+  const fullKey = finding.fingerprint.toLowerCase()
+  const direct = openByFingerprint.get(fullKey)
+  if (direct) return direct
+
+  const slicePrefix = finding.slice ? `${finding.slice.toLowerCase()}:` : ''
+  if (slicePrefix && fullKey.startsWith(slicePrefix)) {
+    const unprefixed = fullKey.slice(slicePrefix.length)
+    if (unprefixed) {
+      return openByFingerprint.get(unprefixed)
+    }
+  }
+  return undefined
+}
+
 export function fileAuditFindings(options: {
   repoRoot: string
   report: QaAuditReport
@@ -231,7 +242,7 @@ export function fileAuditFindings(options: {
 
   const results: FiledIssueRecord[] = []
   for (const finding of report.findings) {
-    const existing = openByFingerprint.get(finding.fingerprint.toLowerCase())
+    const existing = findOpenDuplicate(finding, openByFingerprint)
     if (existing) {
       results.push({
         finding,
