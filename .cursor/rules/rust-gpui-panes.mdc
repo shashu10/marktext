@@ -1,0 +1,26 @@
+---
+description: Rust GPUI pane architecture, WASM/native portability, HostBridge I/O, and TS-to-Rust porting invariants
+globs: rust/**/*.rs
+alwaysApply: false
+---
+
+# Rust GPUI Panes & HostBridge Rules
+
+Before editing any migration pane crate, read `docs/migration/MEMORY.md` and apply only the entries relevant to the pane you are touching.
+
+## Portability & Crate Boundaries
+- Target `gpui-ce` (`default-features = false`) and `gpui_ce_platform` (`default-features = false`) so every view compiles cleanly to both `wasm32-unknown-unknown` (Stage 1) and native OS GPUI (Stage 2).
+- Never put platform `#[cfg]` branches inside UI view crates (`mt-*`); keep platform wiring inside host crates (`marktext-wasm-host`, `mt-pref-app`).
+- Keep crate dependencies strictly acyclic: `marktext-core` (UI-agnostic) -> `marktext-ui-kit` -> leaf `mt-*` crates -> host crates.
+
+## HostBridge & UI Invariants
+- Route all host reads/writes through `HostBridge` (never mutate disconnected local state or bypass Electron Main `preferences.json` broadcast).
+- Reuse `marktext-ui-kit` controls and explicitly wire Tab/Shift-Tab focus order, Enter/Space activation, and Esc dismissal.
+- Serialize WASM guest-to-host JSON payloads with `serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true)` so JS receives plain objects rather than `Map`.
+- Keep user-cleared keybinding overrides as `""` (unbind); delete the entry only when it equals the default accelerator.
+- Use `PERSIST_PREFERENCE` + `PREFERENCE_RESULT` (not fire-and-forget `SET_PREFERENCE`) for edits that clear input drafts or display save status.
+
+## TS/JS to Rust Porting Traps
+- Choose `i64`/`u64` vs `f64` explicitly to match `schema.json` and IPC contracts (avoid turning integers into `42.0`).
+- JS `x || "fallback"` replaces `""`, whereas Rust `Option::unwrap_or` preserves `Some("")`; filter empty strings explicitly.
+- Never put side effects inside `debug_assert!` (erased in `--release`).

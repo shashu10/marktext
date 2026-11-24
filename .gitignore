@@ -13,6 +13,7 @@ packages/*/dist
 !.cursor/Dockerfile
 !.cursor/install.sh
 !.cursor/rules/
+!.cursor/skills/
 doc/
 # Ignore temp artifacts
 temp/
