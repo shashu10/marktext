@@ -374,13 +374,18 @@ pub fn publish_host_action(id: u64, action: String, payload: Value) {
 
 #[cfg(target_family = "wasm")]
 pub fn post_to_parent(reply: &GuestToHost) {
+    use serde::Serialize as _;
+
     let Some(window) = web_sys::window() else {
         return;
     };
     let Ok(Some(parent)) = window.parent() else {
         return;
     };
-    let Ok(value) = serde_wasm_bindgen::to_value(reply) else {
+    // `serde_wasm_bindgen::to_value` serializes JSON objects as JS `Map`s, which
+    // breaks plain-property checks (e.g., `payload.category`) in GpuiPaneHost.
+    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    let Ok(value) = reply.serialize(&serializer) else {
         return;
     };
     let _ = parent.post_message(&value, "*");
