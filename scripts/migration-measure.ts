@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,8 +11,10 @@ export interface MeasureReport {
   startupLatencyMs: number | null
   paneSwitchLatencyMs: number | null
   memoryRssMb: { main: number; renderer: number; gpu: number; total: number } | null
+  /** Stage 2 sidecar RSS when `window.preferences=gpui-native`. */
+  nativeChildRssMb: number | null
   idleCpuPercent: number | null
-  artifactSizeMb: { rendererJs: number; wasm: number | null } | null
+  artifactSizeMb: { rendererJs: number; wasm: number | null; nativePrefApp: number | null } | null
   screenshot: string | null
 }
 
@@ -121,9 +124,93 @@ export const artifactSizes = (): MeasureReport['artifactSizeMb'] => {
     path.join(repoRoot, 'rust/target/wasm32-unknown-unknown/release'),
     '.wasm'
   )
+  const nativeBinary = [
+    path.join(repoRoot, 'rust/target/release/mt-pref-app'),
+    path.join(repoRoot, 'rust/target/debug/mt-pref-app')
+  ].find(candidate => fs.existsSync(candidate))
+  const nativeBytes = nativeBinary ? fs.statSync(nativeBinary).size : 0
   return {
     rendererJs: Number((rendererBytes / (1024 * 1024)).toFixed(3)),
-    wasm: wasmBytes === 0 ? null : Number((wasmBytes / (1024 * 1024)).toFixed(3))
+    wasm: wasmBytes === 0 ? null : Number((wasmBytes / (1024 * 1024)).toFixed(3)),
+    nativePrefApp: nativeBytes === 0 ? null : Number((nativeBytes / (1024 * 1024)).toFixed(3))
+  }
+}
+
+/** W2.A Stage 1 comparison needs every prefs.* pane on rust-wasm, not window.preferences. */
+export const migrationOverridesFor = (slice: SliceDef, flag: string | null): string | null => {
+  if (!flag) return null
+  if (slice.id === 'W2.A' && flag === 'rust-wasm') {
+    return [
+      'window.preferences=legacy',
+      'prefs.sidebar=rust-wasm',
+      'prefs.pane.general=rust-wasm',
+      'prefs.pane.appearance=rust-wasm',
+      'prefs.pane.editor=rust-wasm',
+      'prefs.pane.files=rust-wasm',
+      'prefs.pane.markdown=rust-wasm',
+      'prefs.pane.images=rust-wasm',
+      'prefs.pane.keybindings=rust-wasm'
+    ].join(',')
+  }
+  return `${slice.flag}=${flag}`
+}
+
+const readProcessRssMb = (pid: number): number | null => {
+  try {
+    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8')
+    const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status)
+    if (!match) return null
+    return Number((Number(match[1]) / 1024).toFixed(3))
+  } catch {
+    return null
+  }
+}
+
+export const findMtPrefAppPid = (): number | null => {
+  try {
+    const procs = fs.readdirSync('/proc').filter(name => /^\d+$/.test(name))
+    let best: { pid: number; rss: number } | null = null
+    for (const id of procs) {
+      try {
+        const cmdline = fs.readFileSync(`/proc/${id}/cmdline`, 'utf8')
+        if (!cmdline.includes('mt-pref-app')) continue
+        const status = fs.readFileSync(`/proc/${id}/status`, 'utf8')
+        if (/^State:\s+Z/m.test(status)) continue
+        const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status)
+        const rss = match ? Number(match[1]) : 0
+        if (!best || rss > best.rss) best = { pid: Number(id), rss }
+      } catch {
+        // process vanished
+      }
+    }
+    return best?.pid ?? null
+  } catch {
+    return null
+  }
+}
+
+const captureRootScreenshot = (screenshot: string): void => {
+  fs.mkdirSync(path.dirname(path.resolve(screenshot)), { recursive: true })
+  const attempt = spawnSync('import', ['-window', 'root', screenshot], {
+    encoding: 'utf8',
+    timeout: 8000
+  })
+  if (attempt.status === 0) return
+  const scrot = spawnSync('scrot', [screenshot], { encoding: 'utf8', timeout: 8000 })
+  if (scrot.status !== 0) {
+    throw new Error(`native screenshot failed: ${attempt.stderr || scrot.stderr || 'no import/scrot'}`)
+  }
+}
+
+const killMtPrefAppChildren = (): void => {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const pid = findMtPrefAppPid()
+    if (pid == null) return
+    try {
+      process.kill(pid, attempt < 2 ? 'SIGTERM' : 'SIGKILL')
+    } catch {
+      return
+    }
   }
 }
 
@@ -198,9 +285,19 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
     if (value !== undefined) env[key] = value
   }
   env.MARKTEXT_MIGRATION_ENV = 'prod'
-  if (options.flag) env.MARKTEXT_MIGRATION_OVERRIDES = `${slice.flag}=${options.flag}`
+  const overrides = migrationOverridesFor(slice, options.flag)
+  if (overrides) env.MARKTEXT_MIGRATION_OVERRIDES = overrides
+  if (options.flag === 'gpui-native') {
+    env.VK_ICD_FILENAMES = env.VK_ICD_FILENAMES || '/usr/share/vulkan/icd.d/lvp_icd.json'
+    const binary = [
+      path.join(repoRoot, 'rust/target/release/mt-pref-app'),
+      path.join(repoRoot, 'rust/target/debug/mt-pref-app')
+    ].find(candidate => fs.existsSync(candidate))
+    if (binary) env.MARKTEXT_PREF_APP = binary
+  }
 
   const desktopDir = path.join(repoRoot, 'packages/desktop')
+  const nativeMode = options.flag === 'gpui-native' && slice.flag === 'window.preferences'
   const app = await playwright._electron.launch({
     executablePath: electronPath(),
     args: electronLaunchArgs(desktopDir, userDataDir),
@@ -215,70 +312,94 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
     const category = settingsCategoryForSlice(slice)
     let paneSwitchLatencyMs: number | null = null
     let shot = page
+    let nativeChildRssMb: number | null = null
     if (category) {
       const paneStarted = Date.now()
       await app.evaluate(({ ipcMain }, requested: string) => {
         ipcMain.emit('app-create-settings-window', requested)
       }, category)
-      const deadline = Date.now() + 15000
-      let settings: typeof page | null = null
-      while (Date.now() < deadline) {
-        const pages = app.windows()
-        if (pages.length >= 2) {
-          settings = pages[pages.length - 1] ?? null
-          break
+      if (nativeMode) {
+        const deadline = Date.now() + 20000
+        let pid: number | null = null
+        while (Date.now() < deadline) {
+          pid = findMtPrefAppPid()
+          if (pid != null) break
+          await page.waitForTimeout(200)
         }
-        await page.waitForTimeout(200)
-      }
-      if (!settings) {
-        throw new Error(`settings window did not open for ${slice.id}`)
-      }
-      shot = settings
-      await shot.waitForLoadState('domcontentloaded')
-      const paintDeadline = Date.now() + 20000
-      let painted = false
-      while (Date.now() < paintDeadline) {
-        const probe = await shot.evaluate(() => {
-          const visibleFrames = [...document.querySelectorAll('iframe.gpui-pane-frame')].flatMap(node => {
-            const frame = node as HTMLIFrameElement
-            const box = frame.getBoundingClientRect()
-            if (box.width <= 2 || box.height <= 2) return []
-            const canvas = frame.contentDocument?.querySelector('canvas')
-            return [{
-              paneReady: frame.getAttribute('data-pane-ready'),
-              canvasWidth: canvas?.width ?? 0,
-              canvasHeight: canvas?.height ?? 0
-            }]
+        if (pid == null) throw new Error(`mt-pref-app did not start for ${slice.id}`)
+        // Give the first GPUI frame time under lavapipe before capturing.
+        await page.waitForTimeout(1500)
+        paneSwitchLatencyMs = Date.now() - paneStarted
+        if (options.screenshot) captureRootScreenshot(options.screenshot)
+        nativeChildRssMb = readProcessRssMb(pid)
+      } else {
+        const deadline = Date.now() + 15000
+        let settings: typeof page | null = null
+        while (Date.now() < deadline) {
+          const pages = app.windows()
+          if (pages.length >= 2) {
+            settings = pages[pages.length - 1] ?? null
+            break
+          }
+          await page.waitForTimeout(200)
+        }
+        if (!settings) {
+          throw new Error(`settings window did not open for ${slice.id}`)
+        }
+        shot = settings
+        await shot.waitForLoadState('domcontentloaded')
+        const paintDeadline = Date.now() + 20000
+        let painted = false
+        while (Date.now() < paintDeadline) {
+          const probe = await shot.evaluate(() => {
+            const visibleFrames = [...document.querySelectorAll('iframe.gpui-pane-frame')].flatMap(node => {
+              const frame = node as HTMLIFrameElement
+              const box = frame.getBoundingClientRect()
+              if (box.width <= 2 || box.height <= 2) return []
+              const canvas = frame.contentDocument?.querySelector('canvas')
+              return [{
+                paneReady: frame.getAttribute('data-pane-ready'),
+                canvasWidth: canvas?.width ?? 0,
+                canvasHeight: canvas?.height ?? 0
+              }]
+            })
+            const legacyNode = document.querySelector('.pref-setting')
+            const legacyBox = legacyNode?.getBoundingClientRect()
+            const legacy = legacyBox && visibleFrames.length === 0
+              ? {
+                width: legacyBox.width,
+                height: legacyBox.height,
+                textLength: (legacyNode.textContent ?? '').trim().length
+              }
+              : null
+            return { visibleFrames, legacy }
           })
-          const legacyNode = document.querySelector('.pref-setting')
-          const legacyBox = legacyNode?.getBoundingClientRect()
-          const legacy = legacyBox && visibleFrames.length === 0
-            ? {
-              width: legacyBox.width,
-              height: legacyBox.height,
-              textLength: (legacyNode.textContent ?? '').trim().length
-            }
-            : null
-          return { visibleFrames, legacy }
-        })
-        if (isPanePainted(probe)) {
-          painted = true
-          break
+          if (isPanePainted(probe)) {
+            painted = true
+            break
+          }
+          await shot.waitForTimeout(100)
         }
-        await shot.waitForTimeout(100)
+        if (!painted) throw new Error(`pane did not paint for ${slice.id}`)
+        paneSwitchLatencyMs = Date.now() - paneStarted
+        if (options.screenshot) {
+          fs.mkdirSync(path.dirname(path.resolve(options.screenshot)), { recursive: true })
+          await shot.screenshot({ path: options.screenshot })
+        }
       }
-      if (!painted) throw new Error(`pane did not paint for ${slice.id}`)
-      paneSwitchLatencyMs = Date.now() - paneStarted
-    }
-    if (options.screenshot) {
+    } else if (options.screenshot) {
       fs.mkdirSync(path.dirname(path.resolve(options.screenshot)), { recursive: true })
       await shot.screenshot({ path: options.screenshot })
     }
     await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics())
-    await page.waitForTimeout(5000)
+    await page.waitForTimeout(nativeMode ? 2000 : 5000)
     const metrics = await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics()) as ProcessMetric[]
     const cpu = metrics.reduce((sum, metric) => sum + metric.cpu.percentCPUUsage, 0)
-    return {
+    if (nativeMode) {
+      const pid = findMtPrefAppPid()
+      if (pid != null) nativeChildRssMb = readProcessRssMb(pid)
+    }
+    const report: MeasureReport = {
       slice: options.slice,
       phase: options.phase,
       flag: options.flag,
@@ -286,13 +407,27 @@ const launchReport = async(options: CliOptions, slice: SliceDef): Promise<Measur
       startupLatencyMs,
       paneSwitchLatencyMs,
       memoryRssMb: rssMb(metrics),
+      nativeChildRssMb,
       idleCpuPercent: Number(cpu.toFixed(3)),
       artifactSizeMb: artifactSizes(),
       screenshot: options.screenshot
     }
+    // Reap the sidecar before tearing down Electron so close() cannot hang.
+    killMtPrefAppChildren()
+    return report
   } finally {
-    await app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => {})
-    await app.close().catch(() => {})
+    killMtPrefAppChildren()
+    try {
+      const proc = app.process()
+      if (proc?.pid) process.kill(proc.pid, 'SIGKILL')
+    } catch {
+      // already exited
+    }
+    await Promise.race([
+      app.close().catch(() => {}),
+      new Promise<void>(resolve => setTimeout(resolve, 3000))
+    ])
+    killMtPrefAppChildren()
     fs.rmSync(userDataDir, { recursive: true, force: true })
   }
 }
@@ -305,6 +440,7 @@ const emptyReport = (options: CliOptions): MeasureReport => ({
   startupLatencyMs: null,
   paneSwitchLatencyMs: null,
   memoryRssMb: null,
+  nativeChildRssMb: null,
   idleCpuPercent: null,
   artifactSizeMb: artifactSizes(),
   screenshot: options.screenshot

@@ -1,0 +1,30 @@
+[package]
+name = "mt-pref-app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Native GPUI Preferences window (Stage 2). Speaks HostToGuest/GuestToHost NDJSON over stdio."
+
+[[bin]]
+name = "mt-pref-app"
+path = "src/main.rs"
+
+[dependencies]
+marktext-core = { path = "../marktext-core" }
+marktext-ui-kit = { path = "../marktext-ui-kit" }
+mt-pref-general = { path = "../mt-pref-general" }
+mt-pref-appearance = { path = "../mt-pref-appearance" }
+mt-pref-editor = { path = "../mt-pref-editor" }
+mt-pref-files = { path = "../mt-pref-files" }
+mt-pref-markdown = { path = "../mt-pref-markdown" }
+mt-pref-images = { path = "../mt-pref-images" }
+mt-pref-keybindings = { path = "../mt-pref-keybindings" }
+mt-pref-shell = { path = "../mt-pref-shell" }
+gpui.workspace = true
+gpui_platform = { workspace = true, features = ["x11", "wayland"] }
+gpui_elements.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+async-channel.workspace = true

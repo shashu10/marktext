@@ -12,6 +12,7 @@ members = [
     "crates/mt-pref-images",
     "crates/mt-pref-keybindings",
     "crates/mt-pref-shell",
+    "crates/mt-pref-app",
 ]
 
 [workspace.package]

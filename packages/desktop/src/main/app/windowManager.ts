@@ -311,6 +311,17 @@ class WindowManager extends TypedEmitter<WindowManagerEvents> {
     if (browserWindow) {
       return this.forceClose(browserWindow)
     }
+    // Stage 2 native preferences has no BrowserWindow; destroy the sidecar.
+    const window = this.get(windowId)
+    if (window) {
+      this._appMenu.removeWindowMenu(windowId)
+      this.remove(windowId)
+      window.destroy()
+      if (this._windows.size === 0) {
+        app.quit()
+      }
+      return true
+    }
     return false
   }
 
@@ -447,15 +458,24 @@ class WindowManager extends TypedEmitter<WindowManagerEvents> {
         delete prefs.titleBarStyle
       }
       if (Object.keys(prefs).length > 0) {
-        for (const { browserWindow } of this._windows.values()) {
-          browserWindow?.webContents.send('mt::user-preference', prefs)
+        for (const window of this._windows.values()) {
+          window.browserWindow?.webContents.send('mt::user-preference', prefs)
+          // Stage 2 native preferences listens on NDJSON, not webContents.
+          const nativeSend = (window as { send?: (message: Record<string, unknown>) => void }).send
+          if (typeof nativeSend === 'function') {
+            nativeSend.call(window, { type: 'PREFERENCE_PATCH', changes: prefs })
+          }
         }
       }
     })
 
     onInternalChannel('broadcast-user-data-changed', (userData: Record<string, unknown>) => {
-      for (const { browserWindow } of this._windows.values()) {
-        browserWindow?.webContents.send('mt::user-preference', userData)
+      for (const window of this._windows.values()) {
+        window.browserWindow?.webContents.send('mt::user-preference', userData)
+        const nativeSend = (window as { send?: (message: Record<string, unknown>) => void }).send
+        if (typeof nativeSend === 'function') {
+          nativeSend.call(window, { type: 'PREFERENCE_PATCH', changes: userData })
+        }
       }
     })
   }

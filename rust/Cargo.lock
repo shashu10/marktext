@@ -4052,6 +4052,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mt-pref-app"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gpui-ce",
+ "gpui_ce_elements",
+ "gpui_ce_platform",
+ "marktext-core",
+ "marktext-ui-kit",
+ "mt-pref-appearance",
+ "mt-pref-editor",
+ "mt-pref-files",
+ "mt-pref-general",
+ "mt-pref-images",
+ "mt-pref-keybindings",
+ "mt-pref-markdown",
+ "mt-pref-shell",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mt-pref-appearance"
 version = "0.1.0"
 dependencies = [

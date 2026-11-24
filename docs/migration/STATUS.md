@@ -50,7 +50,7 @@
 
 | Slice ID | Component / Milestone                         | Feature Flag Key     | Prerequisites | Target                                        | Status    |
 | -------- | --------------------------------------------- | -------------------- | ------------- | --------------------------------------------- | --------- |
-| `W2.A`   | **Native GPUI Preferences Window Flip**       | `window.preferences` | `A1`–`A8`     | `rust/crates/mt-pref-app` + `NativeIpcBridge` | `in-progress` |
+| `W2.A`   | **Native GPUI Preferences Window Flip**       | `window.preferences` | `A1`–`A8`     | `rust/crates/mt-pref-app` + `NativeIpcBridge` | `in-review` |
 | `C1`     | Title Bar (Breadcrumb, Save Dot, Controls)    | `chrome.titleBar`    | `P0.3`        | `rust/crates/mt-chrome-titlebar`              | `todo`    |
 | `C2`     | Tab Bar (Reorder, Dirty/Preview, Close)       | `chrome.tabBar`      | `P0.3`        | `rust/crates/mt-chrome-tabs`                  | `todo`    |
 | `C3`     | Left Sidebar — File Tree & Opened Files       | `sidebar.files`      | `P0.3`        | `rust/crates/mt-sidebar-files`                | `todo`    |
